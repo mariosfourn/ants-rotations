@@ -33,7 +33,7 @@ def weights_init(m):
          nn.init.xavier_normal_(m.weight)
 
 
-def save_model(args,model.epoch):
+def save_model(args,model,epoch):
     """
     saves a checkpoint so that model weight can later be used for inference
     Args:
@@ -43,7 +43,7 @@ def save_model(args,model.epoch):
     import os
     if not os.path.exists(path):
       os.mkdir(path)
-    torch.save(model.state_dict(), path+'/checkpoint_epoch_{}.pt'.format{epoch})
+    torch.save(model.state_dict(), path+'/checkpoint_epoch_{}.pt'.format(epoch))
 
 
 
@@ -256,7 +256,12 @@ def main():
     if args.lr_scheduler:
         scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience)
 
-    writer = SummaryWriter(comment='ResNet RotNet for Ants')
+    logging_dir='./logs_'+args.name
+
+    if not os.path.exists(logging_dir):
+        os.makedirs(logging_dir)
+
+    writer = SummaryWriter(logging_dir,comment='ResNet RotNet for Ants')
 
      # Where the magic happens
     sys.stdout.write('Start training\n')
@@ -290,9 +295,10 @@ def main():
 
             # Log training loss
             if batch_idx % args.log_interval==0:
+
                 train_mean, train_std=evaluate_loss(args, model,train_loader_eval)
                 test_mean, test_std= evaluate_loss(args, model,test_loader)
-                writer.add_scalars('data/scalar_group',{'Train Loss':train_mean,
+                writer.add_scalars('scalar_group',{'Train Loss':train_mean,
                                     'Train stddev': train_std,
                                      'Test Loss':  test_mean,
                                      'Test stddev':test_std}, n_iter)

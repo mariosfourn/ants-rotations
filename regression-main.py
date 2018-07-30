@@ -93,7 +93,10 @@ def map_to_circle(input):
     Maps amgels with negative value to [0,1]
     """
 
-    return (torch.max(input, 360+input))/360
+    input[input<0]=input[input<0]+360
+    
+    return input/360
+
 
 def angle_error_regression(y_true, y_pred):
     """
@@ -203,6 +206,9 @@ def main():
                         help='set up lernaring rate scheduler (Default off)')
     parser.add_argument('--patience', type=int, default=5,
                         help='Number of epochs to wait until learning rate is reduced in plateua')
+    parser.add_argument('--print-progress', action='store_true', default=False,
+                        help='print the progress on screen, Recommended for AWS')
+
 
     args = parser.parse_args()
 
@@ -295,6 +301,13 @@ def main():
 
             # Log training loss
             if batch_idx % args.log_interval==0:
+
+                if args.print_progress:
+
+                    sys.stdout.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\r'
+                    .format(epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
+                    sys.stdout.flush()
 
                 train_mean, train_std=evaluate_loss(args, model,train_loader_eval)
                 test_mean, test_std= evaluate_loss(args, model,test_loader)

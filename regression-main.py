@@ -51,7 +51,7 @@ def save_model(args,model,epoch):
 class AntsDataset(Dataset):
     """Ants Dataset"""
 
-    def __init__(self, root_dir, csv_file, outsize, transform=None):
+    def __init__(self, root_dir, csv_file, transform=None):
         """
         Args:
             txt_file (string): Path to the txt file with rotations
@@ -62,7 +62,6 @@ class AntsDataset(Dataset):
         self.rotations = pd.read_csv(csv_file,header=None)
         self.root_dir = root_dir
         self.transform = transform
-        self.outsize = outsize
 
     def __len__(self):
         return len(self.rotations)
@@ -72,15 +71,6 @@ class AntsDataset(Dataset):
                                 self.rotations.iloc[idx, 0])
         image = plt.imread(img_name,format='RGB')
         rotation = self.rotations.iloc[idx, 1].astype('float')
-
-        ##Pad imaga to desired size
-        lh_pad=(self.outsize-image.shape[0])//2
-        rh_pad=self.outsize-image.shape[0]- lh_pad
-        tv_pad=(self.outsize-image.shape[1])//2
-        bv_pad=self.outsize-image.shape[1]-tv_pad
-
-        #Filter, widht, height
-        image=np.pad(image,((lh_pad,rh_pad),(tv_pad,bv_pad),(0,0)),'constant')
 
         if self.transform is not None:
             image=self.transform(image)
@@ -166,8 +156,11 @@ class RotNet(nn.Module):
         elif model_type=='resnet34':
             pretrained=models.resnet50(pretrained=True)
 
-        #Replace last fc layer
+        #Replace average pooling with adaptive pooling
 
+        pretrained.avgpool=nn.AdaptiveAvgPool2d(1)
+
+        #Replace last fc layer
         pretrained.fc=nn.Linear(512,1)
 
         self.network=nn.Sequential(pretrained,
@@ -215,6 +208,8 @@ def main():
                         help='print the progress on screen, Recommended for AWS')
     parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_models,
                         help='choose resnet type [resnet18,resnet34,resnet50] (default=resnet18)')
+    parser.add_argument('--image-size', type=int, default=150,
+                        help='Image input size in pixels for network (default=150)')
 
 
     args = parser.parse_args()
@@ -239,21 +234,21 @@ def main():
     train_rot_file='./ants2_dataset/ants2_rotations.csv'
 
     #Torchvision transformation
-    input_size=224
-    transformations=transforms.Compose([transforms.ToTensor()])
+    transformations=transforms.Compose([transforms.ToPILImage(),
+        transforms.Resize((args.image_size,args.image_size)), transforms.ToTensor()])
 
     # Set up dataloaders
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     train_loader = torch.utils.data.DataLoader(
-        AntsDataset(train_root_dir, train_rot_file,input_size,transform=transformations),
+        AntsDataset(train_root_dir, train_rot_file,transform=transformations),
         batch_size=args.batch_size, shuffle=True, **kwargs)
 
     train_loader_eval = torch.utils.data.DataLoader(
-        AntsDataset(train_root_dir, train_rot_file,input_size,transform=transformations),
+        AntsDataset(train_root_dir, train_rot_file,transform=transformations),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     test_loader = torch.utils.data.DataLoader(
-        AntsDataset(test_root_dir, test_rot_file,input_size,transform=transformations),
+        AntsDataset(test_root_dir, test_rot_file,transform=transformations),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     # Init model and optimizer
@@ -288,10 +283,6 @@ def main():
         for batch_idx, (data,rotations) in enumerate(train_loader):
             model.train()
 
-            #Set data to device
-            #data=data.to(device)
-            #rotations=rotations.to(device)
-
             #conver negative anlge to positive
             rotations=map_to_circle(rotations).view(-1,1).float()   #in the range [0,1]
 
@@ -323,8 +314,6 @@ def main():
                                      'Test Loss':  test_mean,
                                      'Test stddev':test_std}, n_iter)
             n_iter+=1
-
-            break
 
         sys.stdout.write('Ended epoch {}/{} and savign checkpoint \n '.format(epoch,args.epochs))
         sys.stdout.flush()

@@ -152,15 +152,19 @@ def evaluate_loss(args, model,dataloader):
 
 
 
-class ResNet50_RotNet(nn.Module):
+class RotNet(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self):
-        super(ResNet50_RotNet, self).__init__()
+    def __init__(self,model_type):
+        super(RotNet, self).__init__()
 
-    
-        pretrained=models.resnet18(pretrained=True)
+        if model_type=='resnet18':
+            pretrained=models.resnet18(pretrained=True)
+        elif model_type=='resnet34':
+            pretrained=models.resnet34(pretrained=True)
+        elif model_type=='resnet34':
+            pretrained=models.resnet50(pretrained=True)
 
         #Replace last fc layer
 
@@ -179,6 +183,7 @@ def main():
 
     # Training settings
     list_of_choices=['Adam', 'SGD']
+    list_of_models=['resnet18,resnet34,resnet50']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -204,10 +209,12 @@ def main():
                         help="Choose optimiser between 'Adam' (default) and 'SGD' with momentum")
     parser.add_argument('--lr-scheduler', action='store_true', default=False, 
                         help='set up lernaring rate scheduler (Default off)')
-    parser.add_argument('--patience', type=int, default=5,
-                        help='Number of epochs to wait until learning rate is reduced in plateua')
+    parser.add_argument('--patience', type=int, default=3,
+                        help='Number of epochs to wait until learning rate is reduced in plateua (default=3)')
     parser.add_argument('--print-progress', action='store_true', default=False,
                         help='print the progress on screen, Recommended for AWS')
+    parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_models,
+                        help='choose resnet type [resnet18,resnet34,resnet50] (default=resnet18)')
 
 
     args = parser.parse_args()
@@ -251,7 +258,7 @@ def main():
 
     # Init model and optimizer
 
-    model = ResNet50_RotNet()
+    model = RotNet(args.resnet_type)
 
     if args.optimizer=='Adam':
         optimizer=optim.Adam(model.parameters(), lr=args.lr)
@@ -260,7 +267,7 @@ def main():
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     if args.lr_scheduler:
-        scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience)
+        scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience, threshold=0.1)
 
     logging_dir='./logs_'+args.name
 
@@ -317,8 +324,12 @@ def main():
                                      'Test stddev':test_std}, n_iter)
             n_iter+=1
 
+            break
+
         sys.stdout.write('Ended epoch {}/{} and savign checkpoint \n '.format(epoch,args.epochs))
         sys.stdout.flush()
+
+        scheduler.step(train_mean)
 
         save_model(args,model,epoch)
                 

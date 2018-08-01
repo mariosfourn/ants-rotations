@@ -255,6 +255,10 @@ def main():
 
     model = RotNet(args.resnet_type)
 
+    #Estimate memoery usage
+
+    from pytorch_modelsize import SizeEstimator
+
     if args.optimizer=='Adam':
         optimizer=optim.Adam(model.parameters(), lr=args.lr)
 
@@ -262,7 +266,7 @@ def main():
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     if args.lr_scheduler:
-        scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience, threshold=0.1)
+        scheduler=optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience, threshold=0.1,verbose=True)
 
     logging_dir='./logs_'+args.name
 

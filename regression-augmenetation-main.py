@@ -111,7 +111,7 @@ def evaluate_loss(args, model,dataloader):
     model.eval()
     #Store errors
     
-    errors=np.zeros((args.test_batch_number*dataloader.batch_size*5,1))
+    errors=np.zeros((len(dataloader.dataset)*5,1))
     counter=0
     with torch.no_grad():
         
@@ -131,7 +131,7 @@ def evaluate_loss(args, model,dataloader):
 
             counter+=rotations.shape[0]
 
-            if batch_idx==args.test_batch_number-1: break
+            # if batch_idx==args.test_batch_number-1: break
 
     mean_error=errors.mean()
     error_std=errors.std()
@@ -155,16 +155,17 @@ class RotNet(nn.Module):
         elif model_type=='resnet34':
             pretrained=models.resnet50(pretrained=True)
 
-        #Add Batchnorm 2d at the beginnign instead of nornalising images
-
+        #Add Batchnorm 2d at the beginnign instead of nornalising image
 
         #Replace average pooling with adaptive pooling
 
         pretrained.avgpool=nn.AdaptiveAvgPool2d(1)
 
-        #Replace last fc layer
+        # #Replace last fc layer
         pretrained.fc=nn.Sequential(nn.Linear(512,256),
-                                    nn.Linear(256,1))
+                                     nn.Linear(256,1))
+        #pretrained.fc=nn.Linear(512,1)
+
 
         self.network=nn.Sequential(
             nn.BatchNorm2d(3),
@@ -217,10 +218,6 @@ def main():
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--log-interval', type=int, default=1, metavar='N',
-                        help='how many batches to wait before logging training status (default=1)')
-    parser.add_argument('--store-interval', type=int, default=10, metavar='N',
-                        help='how many batches to wait before storing training loss')
     parser.add_argument('--name', type=str, default='',
                         help='name of the run that is added to the output directory')
     parser.add_argument('--optimizer', type=str, default='Adam', choices= list_of_choices,
@@ -233,36 +230,51 @@ def main():
                         help='print the progress on screen, Recommended for AWS')
     parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_models,
                         help='choose resnet type [resnet18,resnet34,resnet50] (default=resnet18)')
-    parser.add_argument('--image-resize', type=int, default=135,
+    parser.add_argument('--image-resize', type=int, default=120,
                         help='size for resizing input image')
-    parser.add_argument('--random-crop-size', type=int, default=120,
+    parser.add_argument('--random-crop-size', type=int, default=100,
                         help='random crop image size in pixel')
     parser.add_argument('--brightness', type=float, default=0.2,
                         help='brightness factor for ColorJitter augmentation')
-    parser.add_argument('--contrast', type=float, default=0.4,
+    parser.add_argument('--contrast', type=float, default=0.2,
                         help='contrast factor for ColorJitter augmentation')
-    parser.add_argument('--saturation', type=float, default=0.15,
+    parser.add_argument('--saturation', type=float, default=0.1,
                         help='saturation factor for ColorJitter augmentation')
-    parser.add_argument('--hue', type=float, default=0.1,
+    parser.add_argument('--hue', type=float, default=0.07,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--random-rotation-range', type=float, default=45, metavar='theta',
+    parser.add_argument('--random-rotation-range', type=float, default=30, metavar='theta',
                         help='random rotation range in degrees for training [-theta,+theta)')
+    parser.add_argument('--save', type=int, default=5, metavar='N',
+                        help='save model every this number of epochs')
+    parser.add_argument('--amsgrad', action='store_true', default=False, 
+                        help='Turn on amsgrad in Adam optimiser')
+    parser.add_argument('--rot-augment', action='store_true', default=False, 
+                        help='Augment Rotations')
 
 
     args = parser.parse_args()
 
     use_cuda = torch.cuda.is_available()
 
+    print('Amgrad set to {}\n'.format(args.amsgrad))
+    print('Rotation augmentation set to {}\n'.format(args.rot_augment))
+
+
     torch.manual_seed(args.seed)
 
-    #Test dataset
-    test_root_dir='./ants1_dataset'
-    test_rot_file='./ants1_dataset/ants1_rotations.csv'
+
+    #1st sequnce of ants
+    ants1_root_dir='./ants1_dataset_ratio3'
+    ants1_rot_file='./ants1_dataset_ratio3/ants1_rotations.csv'
 
 
-    #Trainign dataset
-    train_root_dir='./ants2_dataset'
-    train_rot_file='./ants2_dataset/ants2_rotations.csv'
+    #2nd sequnece of ants
+    ants2_root_dir='./ants2_dataset_ratio3'
+    ants2_rot_file='./ants2_dataset_ratio3/ants2_rotations.csv'
+
+    data_root_dir='./ants_dataset_ratio3_combined'
+    train_rot_dir='./ants_dataset_ratio3_combined/train_rotations.csv'
+    test_rot_dir='./ants_dataset_ratio3_combined/test_rotations.csv'
 
     #Torchvision transformation
     train_transformations=transforms.Compose([transforms.ToPILImage(),
@@ -271,24 +283,23 @@ def main():
         transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor()])
 
-    eval_ransformations=transforms.Compose([transforms.ToPILImage(),
+    eval_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
         transforms.FiveCrop(args.random_crop_size),
         (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
         ]) 
-    # Set up dataloaders
-    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    #Apply tranformtations
+
     train_loader = torch.utils.data.DataLoader(
-        AntsDataset(train_root_dir, train_rot_file,transform=train_transformations),
+        AntsDataset(data_root_dir,train_rot_dir,transform=train_transformations),
         batch_size=args.batch_size, shuffle=True)
 
-    train_loader_eval = torch.utils.data.DataLoader(
-        AntsDataset(train_root_dir, train_rot_file,transform=eval_ransformations),
-        batch_size=args.test_batch_size, shuffle=True)
+    # train_loader_eval = torch.utils.data.DataLoader(train_dataset
+    #     batch_size=args.test_batch_size, shuffle=True)
 
     test_loader = torch.utils.data.DataLoader(
-        AntsDataset(test_root_dir, test_rot_file,transform=eval_ransformations),
-        batch_size=args.test_batch_size, shuffle=True)
+        AntsDataset(data_root_dir,test_rot_dir,transform=eval_transformations),
+        batch_size=args.test_batch_size, shuffle=False)
 
     # Init model and optimizer
 
@@ -297,7 +308,7 @@ def main():
     #Estimate memoery usage
 
     if args.optimizer=='Adam':
-        optimizer=optim.Adam(model.parameters(), lr=args.lr,amsgrad=True)
+        optimizer=optim.Adam(model.parameters(), lr=args.lr,amsgrad=args.amsgrad)
 
     else:
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
@@ -325,13 +336,12 @@ def main():
             model.train()
 
             #conver negative anlge to positive
-            data,random_rotation=rotate_tensor(args,data) 
+            if args.rot_augment:
+                data,random_rotation=rotate_tensor(args,data) 
 
-          
+                rotations=rotations.float()+random_rotation
 
-            rotations=rotations.float()+random_rotation
-
-            rotations=map_to_circle(rotations).view(-1,1)   #in the range [0,1]8
+            rotations=map_to_circle(rotations).view(-1,1).float()   #in the range [0,1]8
 
             # Forward pass
             output=model(data)
@@ -344,31 +354,32 @@ def main():
             loss.backward()
             optimizer.step()
 
-            # Log training loss
-            if batch_idx % args.log_interval==0:
+            writer.add_scalar('Mini-batch train loss',loss.item(),n_iter)
 
-                if args.print_progress:
+            if args.print_progress:
 
-                    sys.stdout.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\r'
-                    .format(epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item()))
-                    sys.stdout.flush()
+                sys.stdout.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\r'
+                .format(epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+                sys.stdout.flush()
 
-                train_mean, train_std=evaluate_loss(args, model,train_loader_eval)
-                test_mean, test_std= evaluate_loss(args, model,test_loader)
-                writer.add_scalars('scalar_group',{'Train Loss':train_mean,
-                                    'Train stddev': train_std,
-                                     'Test Loss':  test_mean,
-                                     'Test stddev':test_std}, n_iter)
+            
             n_iter+=1
 
-        sys.stdout.write('Ended epoch {}/{} and savign checkpoint \n '.format(epoch,args.epochs))
+
+        #train_mean, train_std=evaluate_loss(args, model,train_loader_eval)
+        test_mean, test_std= evaluate_loss(args, model,test_loader)
+        writer.add_scalars('scalar_group',{'Test Loss':  test_mean,
+                                     'Test stddev':test_std}, epoch)
+
+        sys.stdout.write('Ended epoch {}/{} \n '.format(epoch,args.epochs))
         sys.stdout.flush()
 
         if args.lr_scheduler:
             scheduler.step(test_mean)
 
-        save_model(args,model,epoch)
+        if epoch%args.save==0:
+            save_model(args,model,epoch)
                 
 
 if __name__ == '__main__':

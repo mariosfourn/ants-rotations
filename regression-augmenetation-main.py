@@ -179,22 +179,42 @@ class RotNet(nn.Module):
         return y
 
 
+def centre_crop(img, cropx, cropy):
+    c,y,x = img.shape
+    startx = x//2-(cropx//2)
+    starty = y//2-(cropy//2)    
+    return img[:,starty:starty+cropy,startx:startx+cropx]
+
+
 def rotate_tensor(args,input):
     """
-    Roteates tesnor
+    Roteates images by reflect padding, rotating and the  cropping
     Args:
         input: [N,c,h,w] tensor
     Returns:
         rotated torch tensor and angels in degrees
     """
+
+    #First apply reflection pad
+    vertical_pad=input.shape[-1]//2
+    horizontal_pad=input.shape[-2]//2
+    pad2D=(horizontal_pad,horizontal_pad,vertical_pad,vertical_pad)
+    padded_input=F.pad(input,pad2D,mode='reflect')
+
     angles = args.random_rotation_range*np.random.uniform(-1,1,input.shape[0])
+
     angles = angles.astype(np.float32)
+
     outputs = []
+
     for i in range(input.shape[0]):
-        output = rotate(input.numpy()[i,...], angles[i], axes=(1,2), reshape=False)
+        output = rotate(padded_input.numpy()[i,...], angles[i], axes=(1,2), reshape=False)
+        output=centre_crop(output, args.random_crop_size,args.random_crop_size)
         outputs.append(output)
+    
 
     outputs=np.stack(outputs, 0)
+
 
     return torch.from_numpy(outputs), torch.from_numpy(angles)
 

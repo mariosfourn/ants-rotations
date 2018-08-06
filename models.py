@@ -7,15 +7,15 @@ class Autoencoder(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self,model_type):
+    def __init__(self,model_type,pretrained):
         super(Autoencoder, self).__init__()
 
         if model_type=='resnet18':
-            pretrained=models.resnet18(pretrained=True)
+            pretrained=models.resnet18(pretrained=pretrained)
         elif model_type=='resnet34':
-            pretrained=models.resnet34(pretrained=True)
+            pretrained=models.resnet34(pretrained=pretrained)
         elif model_type=='resnet34':
-            pretrained=models.resnet50(pretrained=True)
+            pretrained=models.resnet50(pretrained=pretrained)
 
 
         #Replace maxpool layer with convolutional layers

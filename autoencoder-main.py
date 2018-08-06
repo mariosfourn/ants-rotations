@@ -322,7 +322,7 @@ def save_images(args,images, epoch, path, nrow=None):
     Args:
         images: array of shape [N,c,h,w],
     """
-     if nrow == None:
+    if nrow == None:
          nrow = int(np.floor(np.sqrt(images.size(0)
              )))
 
@@ -404,6 +404,8 @@ def main():
                         help='Number of dimensions to penalise (Default=2)')
     parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
+    parser.add_argument('--not-pretrained', action='store_true', default=False, 
+                        help='Load not pretrained renset')
 
     args = parser.parse_args()
 
@@ -469,7 +471,7 @@ def main():
 
     # Init model and optimizer
 
-    model = Autoencoder(args.resnet_type)
+    model = Autoencoder(args.resnet_type,not args.not_pretrained)
 
     #Estimate memoery usage
 
@@ -519,6 +521,7 @@ def main():
             # Backprop
             loss.backward()
             optimizer.step()
+            break
 
             # writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
             #                          'Reconstruction Loss':reconstruction_loss.item() ,
@@ -550,7 +553,10 @@ def main():
             if args.scheduler_loss=='test':
                 scheduler.step(test_mean)
             elif args.scheduler_loss=='train':
-                scheduler.step(evaluate_reconstruction_loss(args,model,train_loader_eval ))
+                train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
+                scheduler.step(train_loss)
+                sys.stdout.write('L1 loss on training set:{:.4f} \n'.format(train_loss))
+                sys.stdout.flush()
             else:
                 print('Wrong Loss Type')
                 break

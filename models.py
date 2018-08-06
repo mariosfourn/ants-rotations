@@ -131,39 +131,39 @@ class Decoder(nn.Module):
 
             #2nd dconv layer
             NearestUsampling2D((4,4)), # [N,512,4,4]
-            nn.Conv2d(512,256,kernel_size=3,stride=1,padding=1), # [N,512,4,4]
+            nn.Conv2d(512,256,kernel_size=3,stride=1,padding=1), # [N,256,4,4]
             nn.BatchNorm2d(256),
             nn.RReLU(),
 
             #3rd dconv layer
-            NearestUsampling2D((7,7)), # [N,512,7,7]
-            nn.Conv2d(256,128,kernel_size=3,stride=1,padding=1), # [N,512,7,7]
+            NearestUsampling2D((7,7)), # [N,256,7,7]
+            nn.Conv2d(256,128,kernel_size=3,stride=1,padding=1), # [N,128,7,7]
             nn.BatchNorm2d(128),
             nn.RReLU(),
 
             #4th dconv layer
-            NearestUsampling2D((13,13)), # [N,512,13,13]
-            nn.Conv2d(128,64,kernel_size=3,stride=1,padding=1), # [N,512,13,13]
+            NearestUsampling2D((13,13)), # [N,128,13,13]
+            nn.Conv2d(128,64,kernel_size=3,stride=1,padding=1), # [N,64,13,13]
             nn.BatchNorm2d(64),
             nn.RReLU(),
 
             #5th dconv layer
-            NearestUsampling2D((25,25)), # [N,512,25,25]
-            nn.Conv2d(64,32,kernel_size=3,stride=1,padding=1), # [N,512,25,25]
+            NearestUsampling2D((25,25)), # [N,64,25,25]
+            nn.Conv2d(64,32,kernel_size=5,stride=1,padding=1), # [N,32,23,23]
             nn.BatchNorm2d(32),
             nn.RReLU(),
 
             #6th dconv layer
-            NearestUsampling2D((50,50)), # [N,512,50,50]
-            nn.Conv2d(32,16,kernel_size=3,stride=1,padding=1),# [N,512,50,50]
+            NearestUsampling2D((50,50)), # [N,32,50,50]
+            nn.Conv2d(32,16,kernel_size=5,stride=1,padding=1),# [N,16,48,48]
             nn.BatchNorm2d(16),
             nn.RReLU(),
 
             #6th dconv layer
-            NearestUsampling2D((100,100)), # [N,512,50,50]
-            nn.Conv2d(16,3,kernel_size=3,stride=1,padding=1), # [N,512,100,100]
-            nn.BatchNorm2d(3))
-
+            NearestUsampling2D((102,102)), # [N,16,102,102]
+            nn.Conv2d(16,3,kernel_size=5,stride=1,padding=1), # [N,3,100,100]
+            nn.BatchNorm2d(3),
+            nn.Sigmoid())
 
     def forward(self,x):
          return self.decoder(x)

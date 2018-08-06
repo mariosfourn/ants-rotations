@@ -28,6 +28,12 @@ from tensorboardX import SummaryWriter
 from models import Autoencoder
 from PIL import Image
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+         nn.init.xavier_normal_(m.weight)
+    if classname.find('Linear') != -1:
+        nn.init.xavier_normal_(m.weight)
 
 
 def save_model(args,model,epoch):
@@ -151,15 +157,15 @@ def evaluate_loss(args, model,dataloader,writer, epoch):
 
     estimated_rotation=abs_angles[valid_idx_samples[:,1]]-abs_angles[valid_idx_samples[:,0]]
 
-    mean_rotation = np.nanmean(estimated_rotation,axis=1)
+    error=estimated_rotation-valid_rotation_difference
 
     if args.num_dims>2:
         std_rotation =  np.nanstd(estimated_rotation,axis=1,ddof=1)
         writer.add_histogram('Rotation STD hist', std_rotation, epoch)
     
 
-    mean_error = abs(mean_rotation).mean()
-    error_std = mean_rotation.std(ddof=1)
+    mean_error = abs(error).mean()
+    error_std = error.std(ddof=1)
     
     return mean_error, error_std
 
@@ -169,7 +175,7 @@ class atan2_Loss(nn.Module):
     Penalty loss on feature vector to ensure that in encodes rotation information
     """
     
-    def __init__(self,num_dims, size_average=True,type='mse'):
+    def __init__(self,num_dims,type, size_average=True):
         super(atan2_Loss,self).__init__()
         self.size_average=size_average #flag for mena loss
         self.num_dims=num_dims  # 2*int (numnber of dimensions to be penalised)
@@ -221,35 +227,51 @@ def double_loss(args,output,targets,f_data,f_targets):
 
     #Recostriction L1 Loss
     L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-    atam2_loss =atan2_Loss(num_dims=args.num_dims, size_average=True,type=args.loss_type)
+    atan2_loss =atan2_Loss(num_dims=args.num_dims, size_average=True,type=args.loss_type)
     
     #Combine
     reconstruction_loss=L1_loss(output,targets)
-    rotation_loss=atam2_loss(f_data,f_targets)
-    total_loss= (args.alpha)*reconstruction_loss+args.alpha*rotation_loss
+    rotation_loss=atan2_loss(f_data,f_targets)
+    total_loss= (1-args.alpha)*reconstruction_loss+args.alpha*rotation_loss
     return total_loss,reconstruction_loss,rotation_loss
 
 
+def centre_crop(img, cropx, cropy):
+    c,y,x = img.shape
+    startx = x//2-(cropx//2)
+    starty = y//2-(cropy//2)    
+    return img[:,starty:starty+cropy,startx:startx+cropx]
 
 def rotate_tensor(args,input):
     """
-    Roteates tesnor
+    Roteates images by reflect padding, rotating and the  cropping
     Args:
         input: [N,c,h,w] tensor
     Returns:
         rotated torch tensor and angels in degrees
     """
+
+    #First apply reflection pad
+    vertical_pad=input.shape[-1]//2
+    horizontal_pad=input.shape[-2]//2
+    pad2D=(horizontal_pad,horizontal_pad,vertical_pad,vertical_pad)
+    padded_input=F.pad(input,pad2D,mode='reflect')
+
     angles = args.random_rotation_range*np.random.uniform(-1,1,input.shape[0])
+
     angles = angles.astype(np.float32)
+
     outputs = []
+
     for i in range(input.shape[0]):
-        output = rotate(input.numpy()[i,...], angles[i], axes=(1,2), reshape=False)
+        output = rotate(padded_input.numpy()[i,...], angles[i], axes=(1,2), reshape=False)
+        output=centre_crop(output, args.random_crop_size,args.random_crop_size)
         outputs.append(output)
 
     outputs=np.stack(outputs, 0)
 
-    return torch.from_numpy(outputs), torch.from_numpy(angles)
 
+    return torch.from_numpy(outputs), torch.from_numpy(angles)
 
 
 def reconstruction_test(args, model, test_loader, epoch,path):
@@ -294,6 +316,7 @@ def save_images(args,images, epoch, path, nrow=None):
     plt.figure()
     plt.imshow(img)
     plt.axis('off')
+    plt.suptitle(r'Reconstruction, epoch={}, $\alpha$={}'.format(epoch,args.alpha))
     plt.savefig(path+"/Reconstruction_Epoch{:04d}".format(epoch))
     plt.close()
 
@@ -304,6 +327,7 @@ def main():
     # Training settings
     list_of_losses=['mse','abs']
     list_of_choices=['Adam', 'SGD']
+    list_of_loss_to_monitor=['train', 'test']
     list_of_models=['resnet18,resnet34,resnet50']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
@@ -314,8 +338,8 @@ def main():
                         help='Number of Training images to be used for reconstruction test (Default=5)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 50)')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
+    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
+                        help='learning rate (default: 0.0001)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -325,6 +349,8 @@ def main():
     parser.add_argument('--optimizer', type=str, default='Adam', choices= list_of_choices,
                         help="Choose optimiser between 'Adam' (default) and 'SGD' with momentum")
     parser.add_argument('--lr-scheduler', action='store_true', default=False, 
+                        help='set up lernaring rate scheduler (Default off)')
+    parser.add_argument('--scheduler-loss', type=str, default='test', choices=list_of_loss_to_monitor,
                         help='set up lernaring rate scheduler (Default off)')
     parser.add_argument('--patience', type=int, default=3,
                         help='Number of epochs to wait until learning rate is reduced in plateua (default=3)')
@@ -360,12 +386,10 @@ def main():
                         help='No of test samples (Default=1,000)')
     parser.add_argument('--num-dims', type=int, default=2, metavar='D',
                         help='Number of dimensions to penalise (Default=2)')
-
-
+    parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
+                        help='ReduceLROnPlateau signifance threshold (Default=0.1)')
 
     args = parser.parse_args()
-
-    
 
     use_cuda = torch.cuda.is_available()
 
@@ -375,6 +399,9 @@ def main():
         sys.stdout.flush()
 
     torch.manual_seed(args.seed)
+
+    ImageNet_mean=[0.485, 0.456, 0.406]
+    ImageNet_STD=[0.229, 0.224, 0.225]
 
 
     #1st sequnce of ants
@@ -395,12 +422,16 @@ def main():
         transforms.Resize((args.image_resize,args.image_resize)),
         #transforms.RandomCrop(size=args.random_crop_size, pad_if_needed=True),
         transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+        # transforms.Normalize(mean=ImageNet_mean,
+        #                          std=ImageNet_STD),
         transforms.ToTensor()])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
         #transforms.FiveCrop(args.random_crop_size),
         #(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
+        # transforms.Normalize(mean=ImageNet_mean,
+        #                          std=ImageNet_STD),
         transforms.ToTensor()]) 
     #Apply tranformtations
 
@@ -414,7 +445,7 @@ def main():
 
     test_loader = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,test_rot_dir,transform=eval_transformations),
-        batch_size=args.test_batch_size, shuffle=False)
+        batch_size=args.test_batch_size, shuffle=True)
 
     # Init model and optimizer
 
@@ -429,7 +460,7 @@ def main():
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     if args.lr_scheduler:
-        scheduler=optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience,verbose=True)
+        scheduler=optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=args.patience,verbose=True,threshold=args.threshold)
 
     logging_dir='./logs_'+args.name
 
@@ -452,6 +483,8 @@ def main():
 
         for batch_idx, (data,rotations) in enumerate(train_loader):
             model.train()
+
+           
 
             targets,relative_rotations=rotate_tensor(args,data) 
             relative_rotations=relative_rotations.view(-1,1)
@@ -490,8 +523,15 @@ def main():
         sys.stdout.write('Ended epoch {}/{} \n '.format(epoch,args.epochs))
         sys.stdout.flush()
 
+
         if args.lr_scheduler:
-            scheduler.step(test_mean)
+            if args.scheduler_loss=='test':
+                scheduler.step(test_mean)
+            elif args.scheduler_loss=='train':
+                scheduler.step(loss.item())
+            else:
+                print('Wrong Loss Type')
+                break
 
         if epoch%args.save==0:
             save_model(args,model,epoch)

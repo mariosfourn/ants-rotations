@@ -396,9 +396,9 @@ def main():
         sys.stdout.write('{} = {} \n'.format(arg,  getattr(args, arg)))
         sys.stdout.flush()
 
+
     torch.manual_seed(args.seed)
 
-    print(use_cuda)
 
     ImageNet_mean=[0.485, 0.456, 0.406]
     ImageNet_STD=[0.229, 0.224, 0.225]
@@ -485,8 +485,6 @@ def main():
         for batch_idx, (data,rotations) in enumerate(train_loader):
             model.train()
 
-           
-
             targets,relative_rotations=rotate_tensor(args,data) 
             relative_rotations=relative_rotations.view(-1,1)
 
@@ -494,15 +492,18 @@ def main():
             output, f_data, f_targets = model(data, targets,relative_rotations*np.pi/180) 
             optimizer.zero_grad()
 
+
             #Loss
-            loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
+            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
+            loss=L1_loss(output,targets)
+            #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
             loss.backward()
             optimizer.step()
 
-            writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
-                                     'Reconstruction Loss':reconstruction_loss.item() ,
-                                     'ata2 Loss': atan2_loss }, n_iter)
+            # writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
+            #                          'Reconstruction Loss':reconstruction_loss.item() ,
+            #                          'ata2 Loss': atan2_loss }, n_iter)
 
             if args.print_progress:
 
@@ -515,11 +516,11 @@ def main():
             n_iter+=1
 
 
-        test_mean, test_std= evaluate_loss(args, model,test_loader,writer, epoch)
-        writer.add_scalar('Test error',test_mean,epoch)
+        ## test_mean, test_std= evaluate_loss(args, model,test_loader,writer, epoch)
+        ## writer.add_scalar('Test error',test_mean,epoch)
 
-        test_error_mean_log.append(test_mean)
-        test_error_std_log.append(test_std)
+        # test_error_mean_log.append(test_mean)
+        # test_error_std_log.append(test_std)
           
         sys.stdout.write('Ended epoch {}/{} \n '.format(epoch,args.epochs))
         sys.stdout.flush()
@@ -541,7 +542,7 @@ def main():
             reconstruction_test(args, model, train_reconstrunction_loader, epoch,logging_dir)
 
 
-    plot_error(args,np.array(test_error_mean_log),np.array(test_std),logging_dir)
+    # plot_error(args,np.array(test_error_mean_log),np.array(test_std),logging_dir)
 
 
 def plot_error(args,average_error,error_std,path):

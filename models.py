@@ -162,7 +162,6 @@ class Decoder(nn.Module):
             #6th dconv layer
             NearestUsampling2D((102,102)), # [N,16,102,102]
             nn.Conv2d(16,3,kernel_size=5,stride=1,padding=1), # [N,3,100,100]
-            nn.BatchNorm2d(3),
             nn.Sigmoid())
 
     def forward(self,x):

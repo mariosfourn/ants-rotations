@@ -14,9 +14,9 @@ import torchvision
 import random
 import itertools
 
-import matplotlib
+#import matplotlib
 from scipy.ndimage.interpolation import rotate
-matplotlib.use('agg')
+#matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import rotate
 from torchvision import datasets, transforms
@@ -250,7 +250,6 @@ def rotate_tensor(args,input):
     Returns:
         rotated torch tensor and angels in degrees
     """
-
     #First apply reflection pad
     vertical_pad=input.shape[-1]//2
     horizontal_pad=input.shape[-2]//2
@@ -269,7 +268,6 @@ def rotate_tensor(args,input):
         outputs.append(output)
 
     outputs=np.stack(outputs, 0)
-
 
     return torch.from_numpy(outputs), torch.from_numpy(angles)
 
@@ -306,11 +304,11 @@ def save_images(args,images, epoch, path, nrow=None):
     Args:
         images: array of shape [N,c,h,w],
     """
-    if nrow == None:
-        nrow = int(np.floor(np.sqrt(images.size(0)
-            )))
+    # if nrow == None:
+    #     nrow = int(np.floor(np.sqrt(images.size(0)
+    #         )))
 
-    img = torchvision.utils.make_grid(images, nrow=nrow, normalize=True).numpy()
+    img = torchvision.utils.make_grid(images).numpy()
     img = np.transpose(img, (1,2,0))
 
     plt.figure()
@@ -336,8 +334,8 @@ def main():
                         help='test batch size (default: 20)')
     parser.add_argument('-recon-batch-size', type=int, default=5, metavar='N',
                         help='Number of Training images to be used for reconstruction test (Default=5)')
-    parser.add_argument('--epochs', type=int, default=50, metavar='N',
-                        help='number of epochs to train (default: 50)')
+    parser.add_argument('--epochs', type=int, default=30, metavar='N',
+                        help='number of epochs to train (default: 30)')
     parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 0.0001)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -370,8 +368,8 @@ def main():
                         help='saturation factor for ColorJitter augmentation')
     parser.add_argument('--hue', type=float, default=0,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--random-rotation-range', type=float, default=45, metavar='theta',
-                        help='random rotation range in degrees for training,(Default=45), [-theta,+theta)')
+    parser.add_argument('--random-rotation-range', type=float, default=90, metavar='theta',
+                        help='random rotation range in degrees for training,(Default=90), [-theta,+theta)')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--save', type=int, default=5, metavar='N',
@@ -400,6 +398,8 @@ def main():
 
     torch.manual_seed(args.seed)
 
+    print(use_cuda)
+
     ImageNet_mean=[0.485, 0.456, 0.406]
     ImageNet_STD=[0.229, 0.224, 0.225]
 
@@ -420,14 +420,15 @@ def main():
     #Torchvision transformation
     train_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
-        #transforms.RandomCrop(size=args.random_crop_size, pad_if_needed=True),
-        transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+        transforms.CenterCrop(size=args.random_crop_size),
+        #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         # transforms.Normalize(mean=ImageNet_mean,
         #                          std=ImageNet_STD),
         transforms.ToTensor()])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
+        transforms.CenterCrop(size=args.random_crop_size),
         #transforms.FiveCrop(args.random_crop_size),
         #(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
         # transforms.Normalize(mean=ImageNet_mean,

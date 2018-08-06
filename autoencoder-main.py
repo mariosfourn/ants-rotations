@@ -107,9 +107,27 @@ def angle_difference(x, y):
  
     return 180 - torch.abs(torch.abs(x - y) - 180)
 
+def evaluate_reconstruction_loss(args,model, dataloader):
+    """
+    Calculate recostruction loss
+    """
+    total_loss=0.0
+    model.eval()
+        with torch.no_grad():
+            for data,rotations in dataloader:
+                targets,relative_rotations=rotate_tensor(args,data) 
+                relative_rotations=relative_rotations.view(-1,1)
+
+                # Forward pass
+                output, _,_ = model(data, targets,relative_rotations*np.pi/180) 
+
+                L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
+                total_loss+= L1_loss(output,targets).item()* data.shape[0]
+
+    return total_loss/len(dataloader.dataset)
 
 
-def evaluate_loss(args, model,dataloader,writer, epoch):
+def evaluate_rot_loss(args, model,dataloader,writer, epoch):
 
     model.eval()
     #Store errors
@@ -304,11 +322,11 @@ def save_images(args,images, epoch, path, nrow=None):
     Args:
         images: array of shape [N,c,h,w],
     """
-    # if nrow == None:
-    #     nrow = int(np.floor(np.sqrt(images.size(0)
-    #         )))
+     if nrow == None:
+         nrow = int(np.floor(np.sqrt(images.size(0)
+             )))
 
-    img = torchvision.utils.make_grid(images).numpy()
+    img = torchvision.utils.make_grid(images,nrow=nrow).numpy()
     img = np.transpose(img, (1,2,0))
 
     plt.figure()
@@ -422,8 +440,6 @@ def main():
         transforms.Resize((args.image_resize,args.image_resize)),
         transforms.CenterCrop(size=args.random_crop_size),
         #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
-        # transforms.Normalize(mean=ImageNet_mean,
-        #                          std=ImageNet_STD),
         transforms.ToTensor()])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
@@ -431,14 +447,17 @@ def main():
         transforms.CenterCrop(size=args.random_crop_size),
         #transforms.FiveCrop(args.random_crop_size),
         #(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
-        # transforms.Normalize(mean=ImageNet_mean,
-        #                          std=ImageNet_STD),
+
         transforms.ToTensor()]) 
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,train_rot_dir,transform=train_transformations),
         batch_size=args.batch_size, shuffle=True)
+
+    train_loader_eval = torch.utils.data.DataLoader(
+        AntsDataset(data_root_dir,train_rot_dir,transform=train_transformations),
+        batch_size=100, shuffle=False)
 
     train_reconstrunction_loader = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,train_rot_dir,transform=train_transformations),
@@ -515,12 +534,13 @@ def main():
             
             n_iter+=1
 
-
-        ## test_mean, test_std= evaluate_loss(args, model,test_loader,writer, epoch)
+        ## test_mean, test_std= evaluate_rot_loss(args, model,test_loader,writer, epoch)
         ## writer.add_scalar('Test error',test_mean,epoch)
 
         # test_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)
+
+
           
         sys.stdout.write('Ended epoch {}/{} \n '.format(epoch,args.epochs))
         sys.stdout.flush()
@@ -530,7 +550,7 @@ def main():
             if args.scheduler_loss=='test':
                 scheduler.step(test_mean)
             elif args.scheduler_loss=='train':
-                scheduler.step(loss.item())
+                scheduler.step(evaluate_reconstruction_loss(args,model,train_loader_eval ))
             else:
                 print('Wrong Loss Type')
                 break

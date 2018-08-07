@@ -7,27 +7,27 @@ class Autoencoder(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self,model_type,pretrained):
+    def __init__(self,model_type):
         super(Autoencoder, self).__init__()
 
         if model_type=='resnet18':
-            pretrained=models.resnet18(pretrained=pretrained)
+            self.pretrained=models.resnet18(pretrained=True)
         elif model_type=='resnet34':
-            pretrained=models.resnet34(pretrained=pretrained)
+            self.pretrained=models.resnet34(pretrained=True)
         elif model_type=='resnet34':
-            pretrained=models.resnet50(pretrained=pretrained)
+            pretrained=models.resnet50(pretrained=True)
 
 
         #Replace maxpool layer with convolutional layers
-        pretrained.maxpool=nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        self.pretrained.maxpool=nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
 
         #Replace AvgPool2d witth AdaptiveAvgPool2d
 
-        pretrained.avgpool=nn.AdaptiveAvgPool2d(1) 
+        self.pretrained.avgpool=nn.AdaptiveAvgPool2d(1) 
 
         #Remove the last  fc layer anx call in encoder
 
-        self.encoder= nn.Sequential(*list(pretrained.children())[:-1]) 
+        self.encoder= nn.Sequential(*list(self.pretrained.children())[:-1]) 
 
         self.decoder=Decoder()
 

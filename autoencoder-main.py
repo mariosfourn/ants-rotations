@@ -298,13 +298,13 @@ def reconstruction_test(args, model, test_loader, epoch,path):
             n,c,w,h=data.shape
             data = data.unsqueeze(1)
             data = data.repeat(1,1,n,1,1)
-            data = data.view(n**2,c,w,h)
+            data = data.view(n*2,c,w,h)
             target = torch.zeros_like(data)
 
-            angles = torch.linspace(-args.random_rotation_range, args.random_rotation_range, steps=test_loader.batch_size)
+            angles = torch.linspace(-args.random_rotation_range, args.random_rotation_range, steps=6)
             angles = angles.view(n, 1)
             angles = angles.repeat(1, n)
-            angles = angles.view(n**2, 1)
+            angles = angles.view(n*6, 1)
 
 
             # Forward pass
@@ -356,8 +356,8 @@ def main():
                         help='learning rate (default: 0.0001)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
+    # parser.add_argument('--seed', type=int, default=1, metavar='S',
+    #                     help='random seed (default: 1)')
     parser.add_argument('--name', type=str, default='',
                         help='name of the run that is added to the output directory')
     parser.add_argument('--optimizer', type=str, default='Adam', choices= list_of_choices,
@@ -413,6 +413,9 @@ def main():
     for arg in vars(args):
         sys.stdout.write('{} = {} \n'.format(arg,  getattr(args, arg)))
         sys.stdout.flush()
+    sys.stdout.write('Random torch seed:{}\n'.format( torch.initial_seed()))
+    sys.stdout.flush()
+
 
 
     #torch.manual_seed(args.seed)

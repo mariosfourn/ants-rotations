@@ -168,8 +168,8 @@ def evaluate_rot_loss(args, model,dataloader,writer, epoch):
 
     #Exclude differnce beyond  the specified limits
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.random_rotation_range).flatten()]
-    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.random_rotation_range]
+    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range]
 
     estimated_rotation=abs_angles[valid_idx_samples[:,1]]-abs_angles[valid_idx_samples[:,0]]
 
@@ -272,7 +272,7 @@ def rotate_tensor(args,input):
     pad2D=(horizontal_pad,horizontal_pad,vertical_pad,vertical_pad)
     padded_input=F.pad(input,pad2D,mode='reflect')
 
-    angles = args.random_rotation_range*np.random.uniform(-1,1,input.shape[0])
+    angles = args.rotation_range*np.random.uniform(-1,1,input.shape[0])
 
     angles = angles.astype(np.float32)
 
@@ -288,7 +288,7 @@ def rotate_tensor(args,input):
     return torch.from_numpy(outputs), torch.from_numpy(angles)
 
 
-def reconstruction_test(args, model, test_loader, epoch,path):
+def reconstruction_test(args, model, test_loader, epoch,path,steps=8):
 
     model.eval()
     with torch.no_grad():
@@ -296,21 +296,27 @@ def reconstruction_test(args, model, test_loader, epoch,path):
             # Reshape data: apply multiple angles to the same minibatch, hence
             # repeat
             n,c,w,h=data.shape
-            data = data.unsqueeze(1)
-            data = data.repeat(1,1,n,1,1)
-            data = data.view(n*2,c,w,h)
-            target = torch.zeros_like(data)
+            data2 = data.unsqueeze(1)
+            data2 = data2.repeat(1,1,steps,1,1)
+            data2 = data2.view(n*steps,c,w,h)
+            target = torch.zeros_like(data2)
 
-            angles = torch.linspace(-args.random_rotation_range, args.random_rotation_range, steps=6)
-            angles = angles.view(n, 1)
-            angles = angles.repeat(1, n)
-            angles = angles.view(n*6, 1)
+            angles = torch.linspace(-args.rotation_range-30, args.rotation_range+30, steps=steps)
+            angles = angles.view(1,steps)
+            angles=angles.repeat(1,n).view(-1,1)
 
 
             # Forward pass
-            output,_,_ = model(data, target, angles)
+            output,_,_ = model(data2, target, angles*np.pi/180)
+
+            output=output.view(n,steps,3,w,h)
+
+            output=torch.cat((output,data.view(n,1,c,w,h)),dim=1)
+
+            output=output.view(-1,c,w,h)
+
             break
-        save_images(args,output.cpu(), epoch,path)
+        save_images(args,output.cpu(), epoch,path,nrow=steps+1)
 
 
 
@@ -384,8 +390,8 @@ def main():
                         help='saturation factor for ColorJitter augmentation')
     parser.add_argument('--hue', type=float, default=0,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--random-rotation-range', type=float, default=90, metavar='theta',
-                        help='random rotation range in degrees for training,(Default=90), [-theta,+theta)')
+    parser.add_argument('--rotation-range', type=float, default=90, metavar='theta',
+                        help='rotation range in degrees for training,(Default=90), [-theta,+theta)')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--save', type=int, default=5, metavar='N',
@@ -402,7 +408,7 @@ def main():
                         help='Number of dimensions to penalise (Default=2)')
     parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
-    parser.add_argument('--lambda', type=float , default=0.85, 
+    parser.add_argument('--beta', type=float , default=0.85, 
                         help='Blending coeffecient for SSIM loss and L1 loss (Default=0.85)')
 
     args = parser.parse_args()
@@ -519,8 +525,9 @@ def main():
 
 
             #Loss
-            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-            loss=L1_loss(output,targets)
+            L1_loss = torch.nn.L1Loss()
+            ssim_loss =pytorch_ssim.SSIM()
+            loss=(1-args.beta)*L1_loss(output,targets)+args.beta*torch.clamp((1-ssim_loss(output,targets))/2,0,1)
             #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
             loss.backward()

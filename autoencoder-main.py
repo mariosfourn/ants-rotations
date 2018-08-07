@@ -13,6 +13,7 @@ import torch.optim as optim
 import torchvision
 import random
 import itertools
+import pytorch_ssim
 
 #import matplotlib
 from scipy.ndimage.interpolation import rotate
@@ -32,9 +33,6 @@ def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
          nn.init.xavier_normal_(m.weight)
-    if classname.find('Linear') != -1:
-        nn.init.xavier_normal_(m.weight)
-
 
 def save_model(args,model,epoch):
     """
@@ -404,8 +402,8 @@ def main():
                         help='Number of dimensions to penalise (Default=2)')
     parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
-    parser.add_argument('--not-pretrained', action='store_true', default=False, 
-                        help='Load not pretrained renset')
+    parser.add_argument('--lambda', type=float , default=0.85, 
+                        help='Blending coeffecient for SSIM loss and L1 loss (Default=0.85)')
 
     args = parser.parse_args()
 
@@ -417,8 +415,7 @@ def main():
         sys.stdout.flush()
 
 
-    torch.manual_seed(args.seed)
-
+    #torch.manual_seed(args.seed)
 
     ImageNet_mean=[0.485, 0.456, 0.406]
     ImageNet_STD=[0.229, 0.224, 0.225]
@@ -471,7 +468,11 @@ def main():
 
     # Init model and optimizer
 
-    model = Autoencoder(args.resnet_type,not args.not_pretrained)
+    model = Autoencoder(args.resnet_type)
+
+    #Initialise decoder weights based on Xaveir initalisation
+    model.decoder.appy(weights_init)
+    model.pretrained.maxpool.apply(weights_init)
 
     #Estimate memoery usage
 
@@ -521,12 +522,10 @@ def main():
             # Backprop
             loss.backward()
             optimizer.step()
-            break
 
             # writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
             #                          'Reconstruction Loss':reconstruction_loss.item() ,
-            #                          'ata2 Loss': atan2_loss }, n_iter)
-
+            #                          'ata2 Loss': atan2_loss }, n_iter x
             if args.print_progress:
 
                 sys.stdout.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\r'

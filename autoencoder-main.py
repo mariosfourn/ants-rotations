@@ -119,10 +119,17 @@ def evaluate_reconstruction_loss(args,model, dataloader):
             # Forward pass
             output, _,_ = model(data, targets,relative_rotations*np.pi/180) 
 
-            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-            total_loss+= L1_loss(output,targets).item()* data.shape[0]
+            total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
 
     return total_loss/len(dataloader.dataset)
+
+
+def reconstruction_loss(args,x,y):
+    L1_loss = torch.nn.L1Loss()
+    ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size)
+    loss=(1-args.beta)*L1_loss(x,y)+args.beta*torch.clamp((1-ssim_loss(x,y))/2,0,1)
+
+    return loss
 
 
 def evaluate_rot_loss(args, model,dataloader,writer, epoch):
@@ -305,7 +312,6 @@ def reconstruction_test(args, model, test_loader, epoch,path,steps=8):
             angles = angles.view(1,steps)
             angles=angles.repeat(1,n).view(-1,1)
 
-
             # Forward pass
             output,_,_ = model(data2, target, angles*np.pi/180)
 
@@ -410,6 +416,8 @@ def main():
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
     parser.add_argument('--beta', type=float , default=0.85, 
                         help='Blending coeffecient for SSIM loss and L1 loss (Default=0.85)')
+    parser.add_argument('--window-size', type=int , default=11, 
+                        help='Window size for SSIM loss (Default=11 pixels)')
 
     args = parser.parse_args()
 
@@ -525,9 +533,9 @@ def main():
 
 
             #Loss
-            L1_loss = torch.nn.L1Loss()
-            ssim_loss =pytorch_ssim.SSIM()
-            loss=(1-args.beta)*L1_loss(output,targets)+args.beta*torch.clamp((1-ssim_loss(output,targets))/2,0,1)
+
+            loss=reconstruction_loss(args,output,data)
+         
             #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
             loss.backward()
@@ -552,9 +560,8 @@ def main():
         # test_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)
 
-
-          
-        sys.stdout.write('Ended epoch {}/{} \n '.format(epoch,args.epochs))
+        train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
+        sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
         sys.stdout.flush()
 
 
@@ -562,10 +569,7 @@ def main():
             if args.scheduler_loss=='test':
                 scheduler.step(test_mean)
             elif args.scheduler_loss=='train':
-                train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
                 scheduler.step(train_loss)
-                sys.stdout.write('L1 loss on training set:{:.4f} \n'.format(train_loss))
-                sys.stdout.flush()
             else:
                 print('Wrong Loss Type')
                 break

@@ -471,7 +471,7 @@ def main():
     model = Autoencoder(args.resnet_type)
 
     #Initialise decoder weights based on Xaveir initalisation
-    model.decoder.appy(weights_init)
+    model.decoder.apply(weights_init)
     model.pretrained.maxpool.apply(weights_init)
 
     #Estimate memoery usage

@@ -126,10 +126,10 @@ def evaluate_reconstruction_loss(args,model, dataloader):
 
 def reconstruction_loss(args,x,y):
     L1_loss = torch.nn.L1Loss()
-    ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size)
-    loss=(1-args.beta)*L1_loss(x,y)+args.beta*torch.clamp((1-ssim_loss(x,y))/2,0,1)
+    # ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size)
+    # loss=(1-args.beta)*L1_loss(x,y)+args.beta*torch.clamp((1-ssim_loss(x,y))/2,0,1)
 
-    return loss
+    return L1_loss(x,y)
 
 
 def evaluate_rot_loss(args, model,dataloader,writer, epoch):
@@ -194,6 +194,55 @@ def evaluate_rot_loss(args, model,dataloader,writer, epoch):
 
 
 class atan2_Loss(nn.Module):
+    """
+    Penalty loss on feature vector to ensure that in encodes rotation information
+    """
+    
+    def __init__(self,num_dims,type, size_average=True):
+        super(atan2_Loss,self).__init__()
+        self.size_average=size_average #flag for mean loss
+        self.num_dims=num_dims  # 2*int (numnber of dimensions to be penalised)
+        self.type=type
+        
+    def forward(self,input,target):
+        """
+        Args:
+            input: [batch,ndims,1,1]
+            target: [batch,ndmins,1,1]
+        """
+        ndims=input.shape[1]
+        input=input.view(input.shape[0],-1)
+        target=target.view(target.shape[0],-1)
+
+        #Batch size
+        batch_size=input.shape[0]
+
+        input_y=input[:,range(1,ndims,2)] #Extract y coordinates
+        input_x=input[:,range(0,ndims,2)] #Extract x coordinate 
+
+        target_x=target[:,range(0,ndims,2)] #Extract x coordinate 
+        target_y=target[:,range(1,ndims,2)] #Extract y coordinate 
+
+        #Calcuate agles using atan2(y,x)
+        theta_input= torch.atan2(input_y,input_x)
+        theta_target= torch.atan2(target_y,target_x)
+
+        error=theta_target-theta_input
+
+        if self.type=='mse':
+            loss=(error[:,:self.num_dims//2]**2).mean()
+
+        elif self.type=='abs':
+            loss=abs(error[:,:self.num_dims//2]).mean()
+
+        else:
+            sys.stdout.write('wrong loss type\n')
+            sys.stdout.flush()
+            raise
+
+        return loss
+
+class Forbenius_Loss(nn.Module):
     """
     Penalty loss on feature vector to ensure that in encodes rotation information
     """
@@ -429,8 +478,6 @@ def main():
         sys.stdout.flush()
     sys.stdout.write('Random torch seed:{}\n'.format( torch.initial_seed()))
     sys.stdout.flush()
-
-
 
     #torch.manual_seed(args.seed)
 

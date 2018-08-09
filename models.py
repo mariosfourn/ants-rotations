@@ -11,23 +11,23 @@ class Autoencoder(nn.Module):
         super(Autoencoder, self).__init__()
 
         if model_type=='resnet18':
-            self.pretrained=models.resnet18(pretrained=True)
+            pretrained=models.resnet18(pretrained=True)
         elif model_type=='resnet34':
-            self.pretrained=models.resnet34(pretrained=True)
-        elif model_type=='resnet34':
+            pretrained=models.resnet34(pretrained=True)
+        elif model_type=='resnet50':
             pretrained=models.resnet50(pretrained=True)
 
 
         #Replace maxpool layer with convolutional layers
-        self.pretrained.maxpool=nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        pretrained.maxpool=nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
 
         #Replace AvgPool2d witth AdaptiveAvgPool2d
 
-        self.pretrained.avgpool=nn.AdaptiveAvgPool2d(1) 
+        pretrained.avgpool=nn.AdaptiveAvgPool2d(1) 
 
         #Remove the last  fc layer anx call in encoder
 
-        self.encoder= nn.Sequential(*list(self.pretrained.children())[:-1]) 
+        self.encoder= nn.Sequential(*list(pretrained.children())[:-1]) 
 
         self.decoder=Decoder()
 

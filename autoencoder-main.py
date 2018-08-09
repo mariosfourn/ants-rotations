@@ -13,7 +13,7 @@ import torch.optim as optim
 import torchvision
 import random
 import itertools
-import pytorch_ssim
+#import pytorch_ssim
 
 #import matplotlib
 from scipy.ndimage.interpolation import rotate
@@ -45,7 +45,6 @@ def save_model(args,model,epoch):
     if not os.path.exists(path):
       os.mkdir(path)
     torch.save(model.state_dict(), path+'/checkpoint_epoch_{}.pt'.format(epoch))
-
 
 
 class AntsDataset(Dataset):
@@ -119,7 +118,11 @@ def evaluate_reconstruction_loss(args,model, dataloader):
             # Forward pass
             output, _,_ = model(data, targets,relative_rotations*np.pi/180) 
 
-            total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
+            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
+            total_loss+= L1_loss(output,targets).item()* data.shape[0]
+
+
+            # total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
 
     return total_loss/len(dataloader.dataset)
 
@@ -357,7 +360,7 @@ def reconstruction_test(args, model, test_loader, epoch,path,steps=8):
             data2 = data2.view(n*steps,c,w,h)
             target = torch.zeros_like(data2)
 
-            angles = torch.linspace(-args.rotation_range-30, args.rotation_range+30, steps=steps)
+            angles = torch.linspace(-args.rotation_range-10, args.rotation_range+10, steps=steps)
             angles = angles.view(1,steps)
             angles=angles.repeat(1,n).view(-1,1)
 
@@ -535,8 +538,8 @@ def main():
     model = Autoencoder(args.resnet_type)
 
     #Initialise decoder weights based on Xaveir initalisation
-    model.decoder.apply(weights_init)
-    model.pretrained.maxpool.apply(weights_init)
+    # model.decoder.apply(weights_init)
+    # model.pretrained.maxpool.apply(weights_init)
 
     #Estimate memoery usage
 
@@ -581,7 +584,9 @@ def main():
 
             #Loss
 
-            loss=reconstruction_loss(args,output,data)
+            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
+            loss=L1_loss(output,targets)
+            # loss=reconstruction_loss(args,output,data)
          
             #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
@@ -607,9 +612,9 @@ def main():
         # test_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)
 
-        train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
-        sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
-        sys.stdout.flush()
+        # train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
+        # sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
+        # sys.stdout.flush()
 
 
         if args.lr_scheduler:

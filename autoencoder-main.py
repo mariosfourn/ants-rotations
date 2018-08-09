@@ -118,11 +118,12 @@ def evaluate_reconstruction_loss(args,model, dataloader):
             # Forward pass
             output, _,_ = model(data, targets,relative_rotations*np.pi/180) 
 
-            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-            total_loss+= L1_loss(output,targets).item()* data.shape[0]
+            # L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
+            # total_loss+= L1_loss(output,targets).item()* data.shape[0]
 
+            
 
-            # total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
+            total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
 
     return total_loss/len(dataloader.dataset)
 

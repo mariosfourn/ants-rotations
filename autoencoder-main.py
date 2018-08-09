@@ -358,8 +358,8 @@ def main():
                         help="Choose optimiser between 'Adam' (default) and 'SGD' with momentum")
     parser.add_argument('--lr-scheduler', action='store_true', default=False, 
                         help='set up lernaring rate scheduler (Default off)')
-    parser.add_argument('--scheduler-loss', type=str, default='test', choices=list_of_loss_to_monitor,
-                        help='set up lernaring rate scheduler (Default off)')
+    parser.add_argument('--scheduler-loss', type=str, default='train', choices=list_of_loss_to_monitor,
+                        help='which loss to track for lr-scheduler [train, test] (Default=train)')
     parser.add_argument('--patience', type=int, default=5,
                         help='Number of epochs to wait until learning rate is reduced in plateua (default=5)')
     parser.add_argument('--print-progress', action='store_true', default=False,

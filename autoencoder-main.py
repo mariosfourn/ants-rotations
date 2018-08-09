@@ -88,22 +88,6 @@ def convert_to_convetion(input):
     return input
 
 
-def angle_error_regression(y_true, y_pred):
-    """
-    Calculate the mean diference between the true angles
-    and the predicted angles. Each angle is represented
-    as a float number between 0 and 1.
-    """
-    return (angle_difference(y_true * 360, y_pred * 360)).mean()
-
-
-def angle_difference(x, y):
-    """
-    Calculate minimum difference between two angles.
-    """
- 
-    return 180 - torch.abs(torch.abs(x - y) - 180)
-
 def evaluate_reconstruction_loss(args,model, dataloader):
     """
     Calculate recostruction loss
@@ -118,12 +102,7 @@ def evaluate_reconstruction_loss(args,model, dataloader):
             # Forward pass
             output, _,_ = model(data, targets,relative_rotations*np.pi/180) 
 
-            # L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-            # total_loss+= L1_loss(output,targets).item()* data.shape[0]
-
-
-
-            total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
+            total_loss+= reconstruction_loss(args,output,targets).item()* data.shape[0]
 
     return total_loss/len(dataloader.dataset)
 
@@ -134,7 +113,7 @@ def reconstruction_loss(args,x,y):
     ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size) #Average
     loss=(1-args.beta) * L1_loss(x,y) + args.beta * torch.clamp( (1-ssim_loss(x,y))/2,0,1)
 
-    return L1_loss(x,y)
+    return loss
 
 
 def evaluate_rot_loss(args, model,dataloader,writer, epoch):
@@ -197,55 +176,6 @@ def evaluate_rot_loss(args, model,dataloader,writer, epoch):
     
     return mean_error, error_std
 
-
-class atan2_Loss(nn.Module):
-    """
-    Penalty loss on feature vector to ensure that in encodes rotation information
-    """
-    
-    def __init__(self,num_dims,type, size_average=True):
-        super(atan2_Loss,self).__init__()
-        self.size_average=size_average #flag for mean loss
-        self.num_dims=num_dims  # 2*int (numnber of dimensions to be penalised)
-        self.type=type
-        
-    def forward(self,input,target):
-        """
-        Args:
-            input: [batch,ndims,1,1]
-            target: [batch,ndmins,1,1]
-        """
-        ndims=input.shape[1]
-        input=input.view(input.shape[0],-1)
-        target=target.view(target.shape[0],-1)
-
-        #Batch size
-        batch_size=input.shape[0]
-
-        input_y=input[:,range(1,ndims,2)] #Extract y coordinates
-        input_x=input[:,range(0,ndims,2)] #Extract x coordinate 
-
-        target_x=target[:,range(0,ndims,2)] #Extract x coordinate 
-        target_y=target[:,range(1,ndims,2)] #Extract y coordinate 
-
-        #Calcuate agles using atan2(y,x)
-        theta_input= torch.atan2(input_y,input_x)
-        theta_target= torch.atan2(target_y,target_x)
-
-        error=theta_target-theta_input
-
-        if self.type=='mse':
-            loss=(error[:,:self.num_dims//2]**2).mean()
-
-        elif self.type=='abs':
-            loss=abs(error[:,:self.num_dims//2]).mean()
-
-        else:
-            sys.stdout.write('wrong loss type\n')
-            sys.stdout.flush()
-            raise
-
-        return loss
 
 class Forbenius_Loss(nn.Module):
     """
@@ -379,7 +309,6 @@ def reconstruction_test(args, model, test_loader, epoch,path,steps=8):
         save_images(args,output.cpu(), epoch,path,nrow=steps+1)
 
 
-
 def save_images(args,images, epoch, path, nrow=None):
     """Save the images in a grid format
 
@@ -399,7 +328,6 @@ def save_images(args,images, epoch, path, nrow=None):
     plt.suptitle(r'Reconstruction, epoch={}, $\alpha$={}'.format(epoch,args.alpha))
     plt.savefig(path+"/Reconstruction_Epoch{:04d}".format(epoch))
     plt.close()
-
 
 
 def main():
@@ -585,9 +513,7 @@ def main():
 
 
             #Loss
-
-           
-            loss=reconstruction_loss(args,output,data)
+            loss=reconstruction_loss(args,output,targets)
          
             #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
@@ -606,16 +532,15 @@ def main():
 
             
             n_iter+=1
-
         ## test_mean, test_std= evaluate_rot_loss(args, model,test_loader,writer, epoch)
         ## writer.add_scalar('Test error',test_mean,epoch)
 
         # test_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)
 
-        # train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
-        # sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
-        # sys.stdout.flush()
+        train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
+        sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
+        sys.stdout.flush()
 
 
         if args.lr_scheduler:

@@ -128,9 +128,10 @@ def evaluate_reconstruction_loss(args,model, dataloader):
 
 
 def reconstruction_loss(args,x,y):
-    L1_loss = torch.nn.L1Loss()
-    # ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size)
-    # loss=(1-args.beta)*L1_loss(x,y)+args.beta*torch.clamp((1-ssim_loss(x,y))/2,0,1)
+    L1_loss = torch.nn.L1Loss(reduction='elementwise_mean') 
+    
+    ssim_loss =pytorch_ssim.SSIM(window_size= args.window_size) #Average
+    loss=(1-args.beta) * L1_loss(x,y) + args.beta * torch.clamp( (1-ssim_loss(x,y))/2,0,1)
 
     return L1_loss(x,y)
 
@@ -584,9 +585,8 @@ def main():
 
             #Loss
 
-            L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-            loss=L1_loss(output,targets)
-            # loss=reconstruction_loss(args,output,data)
+           
+            loss=reconstruction_loss(args,output,data)
          
             #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop

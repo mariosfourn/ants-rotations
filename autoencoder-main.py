@@ -360,8 +360,8 @@ def main():
                         help='set up lernaring rate scheduler (Default off)')
     parser.add_argument('--scheduler-loss', type=str, default='test', choices=list_of_loss_to_monitor,
                         help='set up lernaring rate scheduler (Default off)')
-    parser.add_argument('--patience', type=int, default=3,
-                        help='Number of epochs to wait until learning rate is reduced in plateua (default=3)')
+    parser.add_argument('--patience', type=int, default=5,
+                        help='Number of epochs to wait until learning rate is reduced in plateua (default=5)')
     parser.add_argument('--print-progress', action='store_true', default=False,
                         help='print the progress on screen, Recommended for AWS')
     parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_models,
@@ -394,8 +394,8 @@ def main():
                         help='No of test samples (Default=1,000)')
     parser.add_argument('--num-dims', type=int, default=2, metavar='D',
                         help='Number of dimensions to penalise (Default=2)')
-    parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
-                        help='ReduceLROnPlateau signifance threshold (Default=0.1)')
+    parser.add_argument('--threshold', type=float, default=1e-4, metavar='l',
+                        help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
     parser.add_argument('--beta', type=float , default=0.85, 
                         help='Blending coeffecient for SSIM loss and L1 loss (Default=0.85)')
     parser.add_argument('--window-size', type=int , default=11, 

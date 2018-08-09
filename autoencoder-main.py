@@ -13,7 +13,7 @@ import torch.optim as optim
 import torchvision
 import random
 import itertools
-#import pytorch_ssim
+import pytorch_ssim
 
 #import matplotlib
 from scipy.ndimage.interpolation import rotate
@@ -121,7 +121,7 @@ def evaluate_reconstruction_loss(args,model, dataloader):
             # L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
             # total_loss+= L1_loss(output,targets).item()* data.shape[0]
 
-            
+
 
             total_loss+= reconstruction_loss(args,output,data).item()* data.shape[0]
 

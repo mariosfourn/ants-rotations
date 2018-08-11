@@ -57,7 +57,8 @@ class Encoder(nn.Module):
         #Remove the last  fc layer anx call in encoder
 
         self.encoder= nn.Sequential(*list(pretrained.children())[:-1], 
-                     nn.Conv2d(512,2,1)) 
+                     nn.Conv2d(512,2,1),
+                     nn.Tanh()) 
 
     def forward(self,x):
         return self.encoder(x)
@@ -71,19 +72,19 @@ class RotEqNet(nn.Module):
         super(RotEqNet, self).__init__()
 
         self.encoder=nn.Sequential(
-            RotConv(3,12,[9,9] ,stride=1, n_angles=17,mode=1),
+            RotConv(3,6,[9,9] ,stride=1, n_angles=17,mode=1),
+            VectorBatchNorm(6),
+            RotConv(6,6,[9,9], stride=2, n_angles=17,mode=2),
+            VectorBatchNorm(6),
+            RotConv(12,12,[9,9],n_angles=17,mode=2),
             VectorBatchNorm(12),
-            RotConv(12,24,[9,9], stride=2, n_angles=17,mode=2),
+            RotConv(12,12,[9,9],stride=1,n_angles=17,mode=2),
+            VectorBatchNorm(12),
+            RotConv(24,24,[9,9],stride=2,n_angles=17,mode=2),
             VectorBatchNorm(24),
-            RotConv(24,48,[9,9],n_angles=17,mode=2),
-            VectorBatchNorm(48),
-            RotConv(48,96,[9,9],stride=1,n_angles=17,mode=2),
-            VectorBatchNorm(96),
-            RotConv(96,192,[9,9],stride=2,n_angles=17,mode=2),
-            VectorBatchNorm(192),
             Vector2Magnitude(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(192,2,1),
+            nn.Conv2d(24,2,1),
             nn.Tanh())
 
 
@@ -198,28 +199,31 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
 
     #Compare neightbouring frames
 
-    sample1=np.roll(absolute_angles,1)
-    sample2=absolute_angles
-    estimated_rotation=convert_to_convetion(sample2-sample1)
+    # sample1=np.roll(absolute_angles,1)
+    # sample2=absolute_angles
+    # estimated_rotation=convert_to_convetion(sample2-sample1)
 
-    GT_rotation=convert_to_convetion(rotations- np.roll(rotations,1))
+    # GT_rotation=convert_to_convetion(rotations- np.roll(rotations,1))
 
+    # error=estimated_rotation-GT_rotation
 
+    # #Sample pairs of indices
+    length=rotations.shape[0]
+
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+
+    #Get the difference in the rotation adn covert to range [-180,180]
+    
+    rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
     #Exclude differnce beyond  the specified limits
 
-    #valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
-    #valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range]
+    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range].reshape(-1,1)
  
-    #estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
+    estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
-    error=estimated_rotation-GT_rotation
-
-    if train==False:
-
-        writer.add_histogram('Test Error Histogram', error, epoch)
-    else :
-        writer.add_histogram('Train Error Histogram',error, epoch)
+    error=estimated_rotation-valid_rotation_difference   
 
     
     mean_error = abs(error).mean()
@@ -298,12 +302,41 @@ def rotate_tensor(args,input,plot=False):
 def sample_data(args, data, rotations):
     #Returns a pairs of images withint the batch
 
-    sample1=roll(data, shift=1, axis=0)
-    sample2=data
+    length=data.shape[0]
 
-    relative_rotations=convert_to_convetion(rotations-roll(rotations,shift=1,axis=0))
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),300))
+
+    rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
+
+    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+
+    valid_rotation_difference=rotation_difference[valid_idx_samples].reshape(-1,1)
+
+    if valid_idx_samples.shape[0]>=args.batch_size:
+
+        sample1=data[valid_idx_samples[:args.batch_size,0]]
+
+        sample2=data[valid_idx_samples[:args.batch_size,1]]
+
+        relative_rotations=valid_rotation_difference[:args.batch_size]
+
+    else:
+
+        sample1=data[valid_idx_samples[:,0]]
+
+        sample2=data[valid_idx_samples[:,1]]
+
+        relative_rotations=valid_rotation_difference
 
     return sample1,sample2,relative_rotations
+
+    # sample1=roll(data, shift=1, axis=0)
+    # sample2=data
+
+    # relative_rotations=convert_to_convetion(rotations-roll(rotations,shift=1,axis=0))
+
+    # return sample1,sample2,relative_rotations
+
 
 def roll(tensor, shift, axis):
     if shift == 0:
@@ -321,7 +354,6 @@ def roll(tensor, shift, axis):
     before = tensor.narrow(axis, 0, dim_size - shift)
     after = tensor.narrow(axis, after_start, shift)
     return torch.cat([after, before], axis)
-
 
 
 def main():
@@ -368,8 +400,8 @@ def main():
                         help='saturation factor for ColorJitter augmentation')
     parser.add_argument('--hue', type=float, default=0,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--rotation-range', type=float, default=180, metavar='theta',
-                        help='rotation range in degrees for training,(Default=180), [-theta,+theta)')
+    parser.add_argument('--rotation-range', type=float, default=90, metavar='theta',
+                        help='rotation range in degrees for training,(Default=90), [-theta,+theta)')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--save', type=int, default=5, metavar='N',
@@ -443,13 +475,13 @@ def main():
 
     # Init model and optimizer
 
-    if args.model=='renset':
-
+    if args.model=='resnet':
         model = Encoder(args.resnet_type)
-    else :
+    else:
         model = RotEqNet()
-
     #Estimate memoery usage
+
+    print(model)
 
     if args.optimizer=='Adam':
         optimizer=optim.Adam(model.parameters(), lr=args.lr,amsgrad=args.amsgrad)
@@ -527,7 +559,7 @@ def main():
         train_error_mean_log.append(train_mean)
         train_error_std_log.append(train_stderr)
 
-        writer.add_scalars('Losses',{'Train Loss: train_mean, Test_loss:test_mean'},epoch)
+        writer.add_scalars('Losses',{'Train Loss': train_mean, 'Test_loss':test_mean},epoch)
 
         if args.lr_scheduler:
             if args.scheduler_loss=='test':

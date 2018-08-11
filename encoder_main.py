@@ -1,5 +1,5 @@
 
-from __future__ import print_function
+from __future__ import print_function, division
 import os
 import sys
 import time
@@ -14,7 +14,7 @@ import torchvision
 import random
 import itertools
 import pytorch_ssim
-
+sys.path.append('./../RotEqNet')
 #import matplotlib
 from scipy.ndimage.interpolation import rotate
 #matplotlib.use('agg')
@@ -29,7 +29,7 @@ from tensorboardX import SummaryWriter
 from PIL import Image
 
 
-
+from layers_2D import RotConv, VectorMaxPool, VectorBatchNorm, Vector2Magnitude, VectorUpsampling
 
 
 class Encoder(nn.Module):
@@ -58,6 +58,34 @@ class Encoder(nn.Module):
 
         self.encoder= nn.Sequential(*list(pretrained.children())[:-1], 
                      nn.Conv2d(512,2,1)) 
+
+    def forward(self,x):
+        return self.encoder(x)
+
+
+class RotEqNet(nn.Module):
+    """
+    Encoder to 2-dimnesional space
+    """
+    def __init__(self):
+        super(RotEqNet, self).__init__()
+
+        self.encoder=nn.Sequential(
+            RotConv(3,12,[9,9] ,stride=1, n_angles=17,mode=1),
+            VectorBatchNorm(12),
+            RotConv(12,24,[9,9], stride=2, n_angles=17,mode=2),
+            VectorBatchNorm(24),
+            RotConv(24,48,[9,9],n_angles=17,mode=2),
+            VectorBatchNorm(48),
+            RotConv(48,96,[9,9],stride=1,n_angles=17,mode=2),
+            VectorBatchNorm(96),
+            RotConv(96,192,[9,9],stride=2,n_angles=17,mode=2),
+            VectorBatchNorm(192),
+            Vector2Magnitude(),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(192,2,1),
+            nn.Tanh())
+
 
     def forward(self,x):
         return self.encoder(x)
@@ -145,48 +173,54 @@ def convert_to_convetion(input):
     
     return input
 
-def evaluate_rot_loss(args, model,dataloader,writer,epoch):
+def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
 
     model.eval()
 
     absolute_angles=np.zeros((len(dataloader.dataset),1))
+    rotations=np.zeros((len(dataloader.dataset),1))
     counter=0
 
     with torch.no_grad():
         
-        for batch_idx, (data,rotations) in enumerate(dataloader):
+        for batch_idx, (data,batch_rotations) in enumerate(dataloader):
    
             f_data=model(data)
 
             f_data_y= f_data[:,1] #Extract y coordinates
             f_data_x= f_data[:,0] #Extract x coordinates
 
+
             absolute_angles[counter:counter+data.shape[0]]=torch.atan2(f_data_y,f_data_x).cpu().numpy().reshape(-1,1)*180/np.pi #Calculate absotulue angel of vectoe
-
+            rotations[counter:counter+data.shape[0]]=batch_rotations.reshape(-1,1)
             counter+=data.shape[0]
-    
-    #Get list of dataset absolute rotations from then dataset
-    rotations=np.array(dataloader.dataset.rotations[1]).astype(float).reshape(-1,1)
 
-    #Sample 1000 pairs of indices
-    length=len(dataloader.dataset)
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+    #Compare neightbouring frames
 
-    #Get the difference in the rotation adn covert to range [-180,180]
+    sample1=np.roll(absolute_angles,1)
+    sample2=absolute_angles
+    estimated_rotation=convert_to_convetion(sample2-sample1)
 
-    rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
+    GT_rotation=convert_to_convetion(rotations- np.roll(rotations,1))
+
+
 
     #Exclude differnce beyond  the specified limits
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
-    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range]
+    #valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+    #valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range]
  
-    estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
+    #estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
-    error=estimated_rotation-valid_rotation_difference
+    error=estimated_rotation-GT_rotation
 
-    writer.add_histogram('Error Histogram', error, epoch)
+    if train==False:
+
+        writer.add_histogram('Test Error Histogram', error, epoch)
+    else :
+        writer.add_histogram('Train Error Histogram',error, epoch)
+
     
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
@@ -261,12 +295,42 @@ def rotate_tensor(args,input,plot=False):
     return torch.from_numpy(outputs), torch.from_numpy(angles)
 
 
+def sample_data(args, data, rotations):
+    #Returns a pairs of images withint the batch
+
+    sample1=roll(data, shift=1, axis=0)
+    sample2=data
+
+    relative_rotations=convert_to_convetion(rotations-roll(rotations,shift=1,axis=0))
+
+    return sample1,sample2,relative_rotations
+
+def roll(tensor, shift, axis):
+    if shift == 0:
+        return tensor
+
+    if axis < 0:
+        axis += tensor.dim()
+
+    dim_size = tensor.size(axis)
+    after_start = dim_size - shift
+    if shift < 0:
+        after_start = -shift
+        shift = dim_size - abs(shift)
+
+    before = tensor.narrow(axis, 0, dim_size - shift)
+    after = tensor.narrow(axis, after_start, shift)
+    return torch.cat([after, before], axis)
+
+
+
 def main():
 
     # Training settings
     list_of_losses=['cosine_abs','cosine_mse','forbenius']
     list_of_choices=['Adam', 'SGD']
-    list_of_models=['resnet18,resnet34,resnet50']
+    list_of_resnet=['resnet18,resnet34,resnet50']
+    list_of_models=['resnet, RotEqNet']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -289,8 +353,8 @@ def main():
     parser.add_argument('--patience', type=int, default=3,
                         help='Number of epochs to wait until learning rate is reduced in plateua (default=3)')
     parser.add_argument('--print-progress', action='store_true', default=False,
-                        help='print the progress on screen, Recommended for AWS')
-    parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_models,
+                        help='con the progress on screen, Recommended for AWS')
+    parser.add_argument('--resnet-type', type=str, default='resnet18', choices= list_of_resnet,
                         help='choose resnet type [resnet18,resnet34,resnet50] (default=resnet18)')
     parser.add_argument('--image-resize', type=int, default=120,
                         help='size for resizing input image (Default=120)')
@@ -316,6 +380,9 @@ def main():
                         help='No of test samples (Default=1,000)')
     parser.add_argument('--threshold', type=float, default=1e-4, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
+    parser.add_argument('--model', type=str, default='resnet', metavar='M',choices= list_of_models,
+                        help='choose encoder type [resnet, RotEqNet], (Default=resnet)')
+
 
     args = parser.parse_args()
 
@@ -332,7 +399,6 @@ def main():
 
     ImageNet_mean=[0.485, 0.456, 0.406]
     ImageNet_STD=[0.229, 0.224, 0.225]
-
 
     #1st sequnce of ants
     ants1_root_dir='./ants1_dataset_ratio3'
@@ -373,11 +439,15 @@ def main():
 
     test_loader = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,test_rot_dir,transform=eval_transformations),
-        batch_size=args.eval_batch_size, shuffle=False)
+        batch_size=args.eval_batch_size, shuffle=True)
 
     # Init model and optimizer
 
-    model = Encoder(args.resnet_type)
+    if args.model=='renset':
+
+        model = Encoder(args.resnet_type)
+    else :
+        model = RotEqNet()
 
     #Estimate memoery usage
 
@@ -403,29 +473,33 @@ def main():
 
     test_error_mean_log=[]
     test_error_std_log=[]
+    train_error_mean_log=[]
+    train_error_std_log=[]
 
     n_iter=0
     for epoch in range(1, args.epochs + 1):
         sys.stdout.write('Starting epoch {}/{} \n '.format(epoch,args.epochs))
         sys.stdout.flush()
 
-        for batch_idx, (data,rotations) in enumerate(train_loader):
+        for batch_idx, (data,rotations)  in enumerate(train_loader):
             model.train()
 
-            targets,relative_rotations=rotate_tensor(args,data) 
+            f_data=model(data)
+
+            rotations=rotations.float()
+            #Apply rotation matrix to sample 1 to bring to saample 2
+
+            #Relative rotation is between sample2 - sample1
+            sample1,sample2,relative_rotations=sample_data(args,f_data,rotations)
+
             relative_rotations=relative_rotations.view(-1,1)
 
-            # Forward pass
-            f_data=model(data)
-            f_targets=model(targets)
-            f_data_trasformed = feature_transformer(f_data,relative_rotations*np.pi/180)
-          
+            sample1_trasformed = feature_transformer(sample1,relative_rotations*np.pi/180)
+
             optimizer.zero_grad()
-
-
             #Define loss
 
-            loss=define_loss(args,f_data_trasformed,f_targets)
+            loss=define_loss(args,sample1_trasformed,sample2)
 
             # Backprop
             loss.backward()
@@ -442,23 +516,24 @@ def main():
 
             n_iter+=1
 
+        train_mean, train_stderr=evaluate_rot_loss(args,model,train_loader_eval,writer,epoch,train=True)
+        sys.stdout.write('Ended epoch {}/{}, Train ={:4f}\n '.format(epoch,args.epochs,train_mean))
+        sys.stdout.flush()
 
-        #train_loss=evaluate_loss(args,model,train_loader_eval)
-        #sys.stdout.write('Ended epoch {}/{}, Train ={:4f}\n '.format(epoch,args.epochs,train_loss))
-        #sys.stdout.flush()
-
-
-
-        test_mean, test_std=evaluate_rot_loss(args,model,test_loader,writer,epoch)
+        test_mean, test_std=evaluate_rot_loss(args,model,test_loader,writer,epoch,train=False)
 
         test_error_mean_log.append(test_mean)
         test_error_std_log.append(test_std)
+        train_error_mean_log.append(train_mean)
+        train_error_std_log.append(train_stderr)
+
+        writer.add_scalars('Losses',{'Train Loss: train_mean, Test_loss:test_mean'},epoch)
 
         if args.lr_scheduler:
             if args.scheduler_loss=='test':
                 scheduler.step(test_mean)
             elif args.scheduler_loss=='train':
-                scheduler.step(train_loss)
+                scheduler.step(train_mean)
             else:
                 print('Wrong Loss Type')
                 break
@@ -466,10 +541,11 @@ def main():
         if epoch%args.save==0:
             save_model(args,model,epoch)
 
-    plot_error(args,np.array(test_error_mean_log),np.array(test_std),logging_dir)
+    plot_error(args,np.array(train_error_mean_log),np.array(train_error_std_log),
+       np.array(test_error_mean_log),np.array(test_error_std_log) ,logging_dir)
 
 
-def plot_error(args,average_error,error_std,path):
+def plot_error(args,train_mean,train_std,test_mean,test_std,path):
     """
     Plots error
     """
@@ -478,16 +554,20 @@ def plot_error(args,average_error,error_std,path):
 
         fig, ax =plt.subplots()
 
-        line,=ax.plot(average_error,label='Mean Abs Tets Error',linewidth=1.25,color='g')
-        ax.fill_between(range(len(average_error)),average_error-error_std,average_error+error_std,
-            alpha=0.2,facecolor=line.get_color(),edgecolor=line.get_color())
+        line1,=ax.plot(train_mean,label='Mean Train Error',linewidth=1.25,color='r')
+        line2,=ax.plot(test_mean,label='Mean Test Error',linewidth=1.25,color='g')
+
+        ax.fill_between(range(len(train_mean)),train_mean-train_std,train_mean+train_std,
+            alpha=0.2,facecolor=line1.get_color(),edgecolor=line1.get_color())
+
+        ax.fill_between(range(len(test_mean)),test_mean-test_std,test_mean+test_std,
+            alpha=0.2,facecolor=line2.get_color(),edgecolor=line2.get_color())
+
         ax.set_ylabel('Degrees',fontsize=10)
         ax.set_xlabel('Epochs',fontsize=10)
         ax.set_xlim(0,None)
-        ax.set_ylim(-10,20)
+        #ax.set_ylim(-5,20)
  
-
-
         #Control colour of ticks
         ax.tick_params(colors='gray', direction='out')
         for tick in ax.get_xticklabels():
@@ -496,12 +576,8 @@ def plot_error(args,average_error,error_std,path):
             tick.set_color('gray')
 
         fig.tight_layout()
-        fig.savefig(path+'/Test_error')
+        fig.savefig(path+'/Learning curves')
         fig.clf()
-
-
-
-                
 
 if __name__ == '__main__':
     main()

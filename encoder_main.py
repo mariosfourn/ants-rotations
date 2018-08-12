@@ -73,19 +73,17 @@ class RotEqNet(nn.Module):
         super(RotEqNet, self).__init__()
 
         self.encoder=nn.Sequential(
-            RotConv(3,6,[9,9] ,stride=1, n_angles=17,mode=1),
+            RotConv(3,6,[9,9] ,stride=2, n_angles=17,mode=1),
             VectorBatchNorm(6),
             RotConv(6,6,[9,9], stride=2, n_angles=17,mode=2),
             VectorBatchNorm(6),
-            RotConv(12,12,[9,9],n_angles=17,mode=2),
+            RotConv(6,12,[9,9],stride=2,n_angles=17,mode=2),
             VectorBatchNorm(12),
-            RotConv(12,12,[9,9],stride=1,n_angles=17,mode=2),
+            RotConv(12,12,[9,9],stride=2,n_angles=17,mode=2),
             VectorBatchNorm(12),
-            RotConv(24,24,[9,9],stride=2,n_angles=17,mode=2),
-            VectorBatchNorm(24),
             Vector2Magnitude(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(24,2,1),
+            nn.Conv2d(12,2,1),
             nn.Tanh())
 
 
@@ -186,38 +184,31 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
     with torch.no_grad():
         
         for batch_idx, (data,batch_rotations) in enumerate(dataloader):
+
+            bs, ncrops, c, h, w = data.size()
    
-            f_data=model(data)
+            f_data=model(data.view(-1,c,h,w))
 
-            f_data_y= f_data[:,1] #Extract y coordinates
-            f_data_x= f_data[:,0] #Extract x coordinates
+            #Average results from 5 crops
 
+            f_data_avg = f_data.view(bs, ncrops, -1).mean(1)
+
+            f_data_y= f_data_avg[:,1] #Extract y coordinates
+            f_data_x= f_data_avg[:,0] #Extract x coordinates
 
             absolute_angles[counter:counter+data.shape[0]]=torch.atan2(f_data_y,f_data_x).cpu().numpy().reshape(-1,1)*180/np.pi #Calculate absotulue angel of vectoe
             rotations[counter:counter+data.shape[0]]=batch_rotations.reshape(-1,1)
-            counter+=data.shape[0]
+            counter+=data.shape[sps0]
 
-
-    #Compare neightbouring frames
-
-    # sample1=np.roll(absolute_angles,1)
-    # sample2=absolute_angles
-    # estimated_rotation=convert_to_convetion(sample2-sample1)
-
-    # GT_rotation=convert_to_convetion(rotations- np.roll(rotations,1))
-
-    # error=estimated_rotation-GT_rotation
-
-    # #Sample pairs of indices
     length=data.shape[0]
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),200))
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
 
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.eval_rotation_range).flatten()]
 
-    valid_rotation_difference=rotation_difference[(abs(rotation_difference)<=args.rotation_range).flatten()].reshape(-1,1)
+    valid_rotation_difference=rotation_difference[(abs(rotation_difference)<=args.eval_rotation_range).flatten()].reshape(-1,1)
  
     estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
@@ -299,47 +290,49 @@ def rotate_tensor(args,input,plot=False):
 def sample_data(args, data, rotations):
     #Returns a pairs of images withint the batch
 
-    length=data.shape[0]
+    if args.sample_mini_batch:
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),200))
+        length=data.shape[0]
 
-    rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
+        num_samples=int(180/args.train_rotation_range*length)
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference.numpy())<=args.rotation_range).flatten()]
+        idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),num_samples))
 
+        rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
-    valid_rotation_difference=rotation_difference[torch.ByteTensor(1*(abs(rotation_difference.numpy())\
-        <=args.rotation_range))].reshape(-1,1)
-
-    
-
-    if valid_idx_samples.shape[0]>=args.batch_size:
-
-        sample1=data[valid_idx_samples[:args.batch_size,0]]
-
-        sample2=data[valid_idx_samples[:args.batch_size,1]]
-
-        relative_rotations=valid_rotation_difference[:args.batch_size]
+        valid_idx_samples=idx_samples[(abs(rotation_difference.numpy())<=args.rotation_range).flatten()]
 
 
-    else:
+        valid_rotation_difference=rotation_difference[torch.ByteTensor(1*(abs(rotation_difference.numpy())\
+            <=args.rotation_range))].reshape(-1,1)
 
-        sample1=data[valid_idx_samples[:,0]]
+        
 
-        sample2=data[valid_idx_samples[:,1]]
+        if valid_idx_samples.shape[0]>=length:
 
-        relative_rotations=valid_rotation_difference
+            sample1=data[valid_idx_samples[:args.batch_size,0]]
 
-    ipdb.set_trace()
+            sample2=data[valid_idx_samples[:args.batch_size,1]]
+
+            relative_rotations=valid_rotation_difference[:args.batch_size]
+
+
+        else:
+
+            sample1=data[valid_idx_samples[:,0]]
+
+            sample2=data[valid_idx_samples[:,1]]
+
+            relative_rotations=valid_rotation_difference
+
+    else: 
+            sample1=roll(data, shift=1, axis=0)
+            sample2=data
+
+            relative_rotations=convert_to_convetion(rotations-roll(rotations,shift=1,axis=0))
+
 
     return sample1,sample2,relative_rotations
-
-    # sample1=roll(data, shift=1, axis=0)
-    # sample2=data
-
-    # relative_rotations=convert_to_convetion(rotations-roll(rotations,shift=1,axis=0))
-
-    # return sample1,sample2,relative_rotations
 
 
 def roll(tensor, shift, axis):
@@ -365,8 +358,8 @@ def main():
     # Training settings
     list_of_losses=['cosine_abs','cosine_mse','forbenius']
     list_of_choices=['Adam', 'SGD']
-    list_of_resnet=['resnet18,resnet34,resnet50']
-    list_of_models=['resnet, RotEqNet']
+    list_of_resnet=['resnet18','resnet34','resnet50']
+    list_of_models=['resnet', 'RotEqNet']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -378,8 +371,8 @@ def main():
                         help='learning rate (default: 0.0001)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    # parser.add_argument('--seed', type=int, default=1, metavar='S',
-    #                     help='random seed (default: 1)')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
     parser.add_argument('--name', type=str, default='',
                         help='name of the run that is added to the output directory')
     parser.add_argument('--optimizer', type=str, default='Adam', choices= list_of_choices,
@@ -404,8 +397,12 @@ def main():
                         help='saturation factor for ColorJitter augmentation')
     parser.add_argument('--hue', type=float, default=0,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--rotation-range', type=float, default=90, metavar='theta',
-                        help='rotation range in degrees for training,(Default=90), [-theta,+theta)')
+    parser.add_argument('--eval-rotation-range', type=float, default=90, metavar='theta',
+                        help='evalutation rotation range in degrees for training,(Default=90), [-theta,+theta)')
+    parser.add_argument('--train-rotation-range', type=float, default=120, metavar='theta',
+                        help='training rotation range in degrees for training,(Default=90), [-theta,+theta)')
+    parser.add_argument('--sample-mini-batch', action='store_true', default=False, 
+                        help='Sample Mini-batch for pairs')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--save', type=int, default=5, metavar='N',
@@ -414,8 +411,8 @@ def main():
                         help="type of loss for atan2 penalty loss [abs,mse,forbenius] (Default= abs)")
     parser.add_argument('--samples', type=int, default=1000, metavar='N',
                         help='No of test samples (Default=1,000)')
-    parser.add_argument('--threshold', type=float, default=1e-4, metavar='l',
-                        help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
+    parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
+                        help='ReduceLROnPlateau signifance threshold (Default=0.1)')
     parser.add_argument('--model', type=str, default='resnet', metavar='M',choices= list_of_models,
                         help='choose encoder type [resnet, RotEqNet], (Default=resnet)')
     parser.add_argument('--rot-augment', action='store_true', default=False, 
@@ -457,17 +454,15 @@ def main():
     #Torchvision transformation
     train_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.CenterCrop(size=args.random_crop_size),
+        transforms.RandomCrop(size=args.random_crop_size),
         #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor()])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.CenterCrop(size=args.random_crop_size),
-        #transforms.FiveCrop(args.random_crop_size),
-        #(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
-
-        transforms.ToTensor()]) 
+        #transforms.CenterCrop(size=args.random_crop_size),
+        transforms.FiveCrop(args.random_crop_size),
+        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))]) 
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(

@@ -73,11 +73,11 @@ class RotEqNet(nn.Module):
         super(RotEqNet, self).__init__()
 
         self.encoder=nn.Sequential(
-            RotConv(3,6,[9,9] ,stride=2, n_angles=17,mode=1),
+            RotConv(3,6,[9,9] ,stride=1, n_angles=17,mode=1),
             VectorBatchNorm(6),
             RotConv(6,6,[9,9], stride=2, n_angles=17,mode=2),
             VectorBatchNorm(6),
-            RotConv(6,12,[9,9],stride=2,n_angles=17,mode=2),
+            RotConv(6,12,[9,9],stride=1,n_angles=17,mode=2),
             VectorBatchNorm(12),
             RotConv(12,12,[9,9],stride=2,n_angles=17,mode=2),
             VectorBatchNorm(12),

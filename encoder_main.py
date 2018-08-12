@@ -27,6 +27,7 @@ import pandas as pd
 import torchvision.models as models
 from tensorboardX import SummaryWriter
 from PIL import Image
+import ipdb
 
 
 from layers_2D import RotConv, VectorMaxPool, VectorBatchNorm, Vector2Magnitude, VectorUpsampling
@@ -208,23 +209,19 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
     # error=estimated_rotation-GT_rotation
 
     # #Sample pairs of indices
-    length=rotations.shape[0]
+    length=data.shape[0]
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),200))
 
-    #Get the difference in the rotation adn covert to range [-180,180]
-    
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
-    #Exclude differnce beyond  the specified limits
-
     valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
-    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range].reshape(-1,1)
+
+    valid_rotation_difference=rotation_difference[(abs(rotation_difference)<=args.rotation_range).flatten()].reshape(-1,1)
  
     estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
     error=estimated_rotation-valid_rotation_difference   
-
     
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
@@ -304,13 +301,17 @@ def sample_data(args, data, rotations):
 
     length=data.shape[0]
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),300))
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),200))
 
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
+    valid_idx_samples=idx_samples[(abs(rotation_difference.numpy())<=args.rotation_range).flatten()]
 
-    valid_rotation_difference=rotation_difference[valid_idx_samples].reshape(-1,1)
+
+    valid_rotation_difference=rotation_difference[1*(abs(rotation_difference.numpy())\
+        <=args.rotation_range).flatten()].reshape(-1,1)
+
+    
 
     if valid_idx_samples.shape[0]>=args.batch_size:
 
@@ -319,6 +320,7 @@ def sample_data(args, data, rotations):
         sample2=data[valid_idx_samples[:args.batch_size,1]]
 
         relative_rotations=valid_rotation_difference[:args.batch_size]
+
 
     else:
 
@@ -414,6 +416,11 @@ def main():
                         help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
     parser.add_argument('--model', type=str, default='resnet', metavar='M',choices= list_of_models,
                         help='choose encoder type [resnet, RotEqNet], (Default=resnet)')
+    parser.add_argument('--rot-augment', action='store_true', default=False, 
+                        help='Augment Rotations')
+    parser.add_argument('--prop', type=float, default=0.5, metavar='P' , 
+                        help='Proportion of data to apply rotation augmentation')
+
 
 
     args = parser.parse_args()
@@ -480,8 +487,6 @@ def main():
     else:
         model = RotEqNet()
     #Estimate memoery usage
-
-    print(model)
 
     if args.optimizer=='Adam':
         optimizer=optim.Adam(model.parameters(), lr=args.lr,amsgrad=args.amsgrad)

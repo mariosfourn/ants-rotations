@@ -308,8 +308,8 @@ def sample_data(args, data, rotations):
     valid_idx_samples=idx_samples[(abs(rotation_difference.numpy())<=args.rotation_range).flatten()]
 
 
-    valid_rotation_difference=rotation_difference[1*(abs(rotation_difference.numpy())\
-        <=args.rotation_range).flatten()].reshape(-1,1)
+    valid_rotation_difference=rotation_difference[torch.ByteTensor(1*(abs(rotation_difference.numpy())\
+        <=args.rotation_range))].reshape(-1,1)
 
     
 
@@ -329,6 +329,8 @@ def sample_data(args, data, rotations):
         sample2=data[valid_idx_samples[:,1]]
 
         relative_rotations=valid_rotation_difference
+
+    ipdb.set_trace()
 
     return sample1,sample2,relative_rotations
 

@@ -191,7 +191,7 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
 
             #f_data=model(data)
 
-            Average results from 5 crops
+            #Average results from 5 crops
 
             f_data_avg = f_data.view(bs, ncrops, -1).mean(1)
 

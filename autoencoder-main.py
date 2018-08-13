@@ -252,6 +252,8 @@ class FeatureVectorLoss(nn.Module):
         ndims=round_even(self.proportion*total_dims)
         reg_loss=0.0
 
+        cosine_similarity=nn.CosineSimilarity(dim=2)
+
         for i in range(0,ndims-1,2):
             x_i=x[:,i:i+2]
             y_i=y[:,i:i+2]
@@ -260,13 +262,17 @@ class FeatureVectorLoss(nn.Module):
             y_norm=torch.norm(y_i, p=2, dim=1, keepdim=True)
 
             if self.type=='mse':
-                reg_loss+=((dot_prod/(x_norm*y_norm)-1)**2).sum()
+                reg_loss+= torch.abs(cosine_similarity(x_i.view(x_i.size(0),1,2),y_i.view(y_i.size(0),1,2))-1.0).sum()
+                #reg_loss+=((dot_prod/(x_norm*y_norm)-1)**2).sum()
             elif self.type=='abs':
-                reg_loss+=(abs(dot_prod/(x_norm*y_norm)-1)).sum()
+               
+                reg_loss+= torch.abs(cosine_similarity(x_i.view(x_i.size(0),1,2),y_i.view(y_i.size(0),1,2))-1.0).sum()
+                #eg_loss+=(abs(dot_prod/(x_norm*y_norm)-1)).sum()
+              
             elif self.type=='L2_norm':
                 forb_distance=torch.nn.PairwiseDistance()
-                x_polar=x_i/x_norm
-                y_polar=y_i/y_norm
+                x_polar=x_i/torch.maximum(x_norm, 1e-08)
+                y_polar=y_i/torch.maximu(y_norm,1e-08)
                 reg_loss+=(forb_distance(x_polar,y_polar)**2).sum()
            
         if self.size_average:
@@ -556,7 +562,7 @@ def main():
             # Forward pass
             output, f_data, f_targets = model(data, targets,relative_rotations*np.pi/180) 
             optimizer.zero_grad()
-         
+
             loss,reconstruction_loss,rotation_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
             loss.backward()

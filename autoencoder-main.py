@@ -574,8 +574,6 @@ def main():
             
             n_iter+=1
 
-            break
-
         #Calculae synthetic rotation loss
         test_synthetic_mean, test_synthetic_std = eval_synthetic_rot_loss(args, model,test_loader)
 

@@ -185,17 +185,17 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
         
         for batch_idx, (data,batch_rotations) in enumerate(dataloader):
 
-            #bs, ncrops, c, h, w = data.size()
+            bs, ncrops, c, h, w = data.size()
    
-            #f_data=model(data.view(-1,c,h,w))
+            f_data=model(data.view(-1,c,h,w))
 
-            f_data=model(data)
+            #f_data=model(data)
 
-            #Average results from 5 crops
+            Average results from 5 crops
 
-            #f_data_avg = f_data.view(bs, ncrops, -1).mean(1)
+            f_data_avg = f_data.view(bs, ncrops, -1).mean(1)
 
-            f_data_avg=f_data
+            #f_data_avg=f_data
 
             f_data_y= f_data_avg[:,1] #Extract y coordinates
             f_data_x= f_data_avg[:,0] #Extract x coordinates
@@ -308,7 +308,7 @@ def sample_data(args, data, rotations):
         valid_rotation_difference=rotation_difference[torch.ByteTensor(1*(abs(rotation_difference.numpy())\
             <=args.train_rotation_range))].reshape(-1,1)
 
-        if valid_idx_samples.shape[0]>=length:
+        if valid_idx_samples.shape[0]>length:
 
             sample1=data[valid_idx_samples[:length,0]]
 
@@ -429,7 +429,7 @@ def main():
     sys.stdout.write('Random torch seed:{}\n'.format( torch.initial_seed()))
     sys.stdout.flush()
 
-    torch.manual_seed(args.seed)
+    #torch.manual_seed(args.seed)
 
     ImageNet_mean=[0.485, 0.456, 0.406]
     ImageNet_STD=[0.229, 0.224, 0.225]
@@ -449,18 +449,17 @@ def main():
     #Torchvision transformation
     train_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.CenterCrop(size=args.random_crop_size),
-        #transforms.RandomCrop(size=args.random_crop_size),
+        #transforms.CenterCrop(size=args.random_crop_size),
+        transforms.RandomCrop(size=args.random_crop_size),
         #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor()])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
         transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.CenterCrop(size=args.random_crop_size),
-         transforms.ToTensor()])
-        #transforms.CenterCrop(size=args.random_crop_size),
-        #transforms.FiveCrop(args.random_crop_size),
-        #(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))]) 
+       # transforms.CenterCrop(size=args.random_crop_size),
+        # transforms.ToTensor()])
+        transforms.FiveCrop(args.random_crop_size),
+        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))]) 
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(
@@ -469,11 +468,11 @@ def main():
 
     train_loader_eval = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,train_rot_dir,transform=eval_transformations),
-        batch_size=args.eval_batch_size, shuffle=True)
+        batch_size=args.eval_batch_size, shuffle=False)
 
     test_loader = torch.utils.data.DataLoader(
         AntsDataset(data_root_dir,test_rot_dir,transform=eval_transformations),
-        batch_size=args.eval_batch_size, shuffle=True)
+        batch_size=args.eval_batch_size, shuffle=False)
 
     # Init model and optimizer
 

@@ -88,6 +88,9 @@ def convert_to_convetion(input):
     return input
 
 
+def round_even(x):
+    return int(round(x/2.)*2)
+
 def evaluate_reconstruction_loss(args,model, dataloader):
     """
     Calculate recostruction loss
@@ -116,40 +119,79 @@ def reconstruction_loss(args,x,y):
     return loss
 
 
-def evaluate_rot_loss(args, model,dataloader,writer, epoch):
+def eval_synthetic_rot_loss(args,model,data_loader):
 
     model.eval()
-    #Store errors
-    
-    #errors=np.zeros((len(dataloader.dataset)*5,1))
-    abs_angles=np.zeros((len(dataloader.dataset),args.num_dims//2))
+    #Number of features penalised
+    ndims=round_even(args.proportion*512)
+    error=np.zeros(len(data_loader.dataset))
+    counter=0
+    with torch.no_grad():
+        for data,_ in data_loader:
+            ## Reshape data
+            targets,rotations=rotate_tensor(args,data)
+
+            # Forward passes
+            f_data=model.encoder(data)
+            f_data=f_data.view(f_data.shape[0],-1) #convert 3D vector to 2D
+
+            f_data_y= f_data[:,range(1,f_data.shape[1],2)] #Extract y coordinates
+            f_data_x= f_data[:,range(0,f_data.shape[1],2)] #Extract x coordinate 
+
+            f_targets=model.encoder(targets)
+            f_targets=f_targets.view(f_targets.shape[0],-1) #convert 3D vector to 2D
+
+            f_targets_y= f_data[:,range(1,f_targets.shape[1],2)] #Extract y coordinates
+            f_targets_x= f_data[:,range(0,f_targets.shape[1],2)] #Extract x coordinate 
+
+            theta_data=torch.atan2(f_data_y,f_data_x).cpu().numpy()*180/np.pi #Calculate absotulue angel of vector
+            theta_targets=torch.atan2(f_targets_y,f_targets_x).cpu().numpy()*180/np.pi #Calculate absotulue angel of vector
+
+            estimated_angle=np.nanmean(theta_targets[:,:ndims//2]-theta_data[:,:ndims//2],axis=1)
+            
+            estimated_angle=convert_to_convetion(estimated_angle)
+
+            error[counter:counter+data.shape[0]]=estimated_angle-rotations.numpy()
+            
+            counter+=data.shape[0]
+
+           
+    return  abs(error).mean(), error.std()
+
+
+def evaluate_real_rot_loss(args, model,dataloader,writer, epoch):
+
+    model.eval()
+
+    #Number of features penalised
+    ndims=round_even(args.proportion*512)
+
+    abs_angles=np.zeros((len(dataloader.dataset),ndims//2))
+    rotations=np.zeros((len(dataloader.dataset),1))
+
     counter=0
 
     with torch.no_grad():
         
-        for batch_idx, (data,rotations) in enumerate(dataloader):
+        for batch_idx, (data,batch_rotations) in enumerate(dataloader):
    
-            #bs, ncrops, c, h, w = data.size()
-            # rotations=(rotations.view(-1,1).repeat(1,5).view(-1,1)).float()
             #Get feature vector
+
             f_data=model.encoder(data)
-            f_data=f_data.view(f_data.shape[0],-1)
+            f_data=f_data.view(f_data.shape[0],-1) #convert 3D vector to 2D
 
             f_data_y= f_data[:,range(1,f_data.shape[1],2)] #Extract y coordinates
             f_data_x= f_data[:,range(0,f_data.shape[1],2)] #Extract x coordinate 
 
             theta_data=torch.atan2(f_data_y,f_data_x).numpy()*180/np.pi #Calculate absotulue angel of vector
 
-            abs_angles[counter:counter+data.shape[0]]=theta_data[:,:args.num_dims//2]#Store values
+            abs_angles[counter:counter+data.shape[0]]=theta_data[:,:ndims//2]#Store values
+            rotations[counter:counter+data.shape[0]]=batch_rotations.reshape(-1,1)
 
             counter+=data.shape[0]
 
-    #Get list of dataset absolute rotations from then dataset
 
-    rotations=np.array(dataloader.dataset.rotations[1]).astype(float).reshape(-1,1)
-
-    #Sample 1000 pairs of indices
-    length=len(dataloader.dataset)
+    length=rotations.shape[0]
 
     idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
 
@@ -159,17 +201,20 @@ def evaluate_rot_loss(args, model,dataloader,writer, epoch):
 
     #Exclude differnce beyond  the specified limits
 
-    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.rotation_range).flatten()]
-    valid_rotation_difference=rotation_difference[abs(rotation_difference)<=args.rotation_range]
+    valid_idx_samples=idx_samples[(abs(rotation_difference)<=args.eval_rotation_range).flatten()]
 
-    estimated_rotation=abs_angles[valid_idx_samples[:,1]]-abs_angles[valid_idx_samples[:,0]]
+    valid_rotation_difference=rotation_difference[(abs(rotation_difference)<=args.eval_rotation_range).flatten()].reshape(-1,1)
+
+    estimated_rotation=convert_to_convetion(abs_angles[valid_idx_samples[:,1]]-abs_angles[valid_idx_samples[:,0]])
+
 
     error=estimated_rotation-valid_rotation_difference
 
-    if args.num_dims>2:
+    if valid_rotation_difference.shape[1]>2:
         std_rotation =  np.nanstd(estimated_rotation,axis=1,ddof=1)
         writer.add_histogram('Rotation STD hist', std_rotation, epoch)
     
+    error=error.mean(axis=1)
 
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
@@ -177,54 +222,56 @@ def evaluate_rot_loss(args, model,dataloader,writer, epoch):
     return mean_error, error_std
 
 
-class Forbenius_Loss(nn.Module):
+class FeatureVectorLoss(nn.Module):
     """
     Penalty loss on feature vector to ensure that in encodes rotation information
     """
     
-    def __init__(self,num_dims,type, size_average=True):
-        super(atan2_Loss,self).__init__()
+    def __init__(self,proportion, type , size_average=True):
+        super(FeatureVectorLoss,self).__init__()
         self.size_average=size_average #flag for mena loss
-        self.num_dims=num_dims  # 2*int (numnber of dimensions to be penalised)
+        self.proportion=proportion     #proportion of feature vector to be penalised
         self.type=type
         
-    def forward(self,input,target):
+    def forward(self,x,y):
         """
+        penalty loss bases on cosine similarity being 1
+
         Args:
-            input: [batch,ndims,1,1]
-            target: [batch,ndmins,1,1]
+            x: [batch,1,ndims]
+            y: [batch,1,ndims]
         """
-        ndims=input.shape[1]
-        input=input.view(input.shape[0],-1)
-        target=target.view(target.shape[0],-1)
-
+        x=x.view(x.shape[0],-1)
+        y=y.view(y.shape[0],-1)
+        #Number of features
+        total_dims=x.shape[1]
         #Batch size
-        batch_size=input.shape[0]
+        batch_size=x.shape[0]
 
-        input_y=input[:,range(1,ndims,2)] #Extract y coordinates
-        input_x=input[:,range(0,ndims,2)] #Extract x coordinate 
+        #Number of features penalised
+        ndims=round_even(self.proportion*total_dims)
+        reg_loss=0.0
 
-        target_x=target[:,range(0,ndims,2)] #Extract x coordinate 
-        target_y=target[:,range(1,ndims,2)] #Extract u coordinate 
+        for i in range(0,ndims-1,2):
+            x_i=x[:,i:i+2]
+            y_i=y[:,i:i+2]
+            dot_prod=torch.bmm(x_i.view(batch_size,1,2),y_i.view(batch_size,2,1)).view(batch_size,1)
+            x_norm=torch.norm(x_i, p=2, dim=1, keepdim=True)
+            y_norm=torch.norm(y_i, p=2, dim=1, keepdim=True)
 
-        #Calcuate agles using atan2(y,x)
-        theta_input= torch.atan2(input_y,input_x)
-        theta_target= torch.atan2(target_y,target_x)
-
-        error=theta_target-theta_input
-
-        if self.type=='mse':
-            loss=(error[:,:self.num_dims//2]**2).mean()
-
-        elif self.type=='abs':
-            loss=abs(error[:,:self.num_dims//2]).mean()
-
-        else:
-            sys.stdout.write('wrong loss type\n')
-            sys.stdout.flush()
-            raise
-
-        return loss
+            if type=='mse':
+                reg_loss+=((dot_prod/(x_norm*y_norm)-1)**2).sum()
+            elif type=='abs':
+                reg_loss+=(abs(dot_prod/(x_norm*y_norm)-1)).sum()
+            elif type=='L2_norm':
+                forb_distance=torch.nn.PairwiseDistance()
+                x_polar=x_i/x_norm
+                y_polar=y_i/y_norm
+                reg_loss+=(forb_distance(x_polar,y_polar)**2).sum()
+           
+        if self.size_average:
+            reg_loss=reg_loss/x.shape[0]/(ndims//2)
+        return reg_loss
 
 
 def double_loss(args,output,targets,f_data,f_targets):
@@ -234,11 +281,11 @@ def double_loss(args,output,targets,f_data,f_targets):
 
     #Recostriction L1 Loss
     L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-    atan2_loss =atan2_Loss(num_dims=args.num_dims, size_average=True,type=args.loss_type)
+    feature_vector_loss =FeatureVectorLoss(proportion=args.proportion,type=args.loss_type)
     
     #Combine
     reconstruction_loss=L1_loss(output,targets)
-    rotation_loss=atan2_loss(f_data,f_targets)
+    rotation_loss=feature_vector_loss(f_data,f_targets)
     total_loss= (1-args.alpha)*reconstruction_loss+args.alpha*rotation_loss
     return total_loss,reconstruction_loss,rotation_loss
 
@@ -263,7 +310,7 @@ def rotate_tensor(args,input):
     pad2D=(horizontal_pad,horizontal_pad,vertical_pad,vertical_pad)
     padded_input=F.pad(input,pad2D,mode='reflect')
 
-    angles = args.rotation_range*np.random.uniform(-1,1,input.shape[0])
+    angles = args.train_rotation_range*np.random.uniform(-1,1,input.shape[0])
 
     angles = angles.astype(np.float32)
 
@@ -292,7 +339,7 @@ def reconstruction_test(args, model, test_loader, epoch,path,steps=8):
             data2 = data2.view(n*steps,c,w,h)
             target = torch.zeros_like(data2)
 
-            angles = torch.linspace(-args.rotation_range-10, args.rotation_range+10, steps=steps)
+            angles = torch.linspace(-args.train_rotation_range-10, args.train_rotation_range+10, steps=steps)
             angles = angles.view(1,steps)
             angles=angles.repeat(1,n).view(-1,1)
 
@@ -358,8 +405,8 @@ def main():
                         help="Choose optimiser between 'Adam' (default) and 'SGD' with momentum")
     parser.add_argument('--lr-scheduler', action='store_true', default=False, 
                         help='set up lernaring rate scheduler (Default off)')
-    parser.add_argument('--scheduler-loss', type=str, default='train', choices=list_of_loss_to_monitor,
-                        help='which loss to track for lr-scheduler [train, test] (Default=train)')
+    parser.add_argument('--scheduler-loss', type=str, default='test', choices=list_of_loss_to_monitor,
+                        help='which loss to track for lr-scheduler [train, test] (Default=test)')
     parser.add_argument('--patience', type=int, default=5,
                         help='Number of epochs to wait until learning rate is reduced in plateua (default=5)')
     parser.add_argument('--print-progress', action='store_true', default=False,
@@ -378,8 +425,10 @@ def main():
                         help='saturation factor for ColorJitter augmentation')
     parser.add_argument('--hue', type=float, default=0,
                         help='hue factor for ColorJitter augmentation')
-    parser.add_argument('--rotation-range', type=float, default=90, metavar='theta',
-                        help='rotation range in degrees for training,(Default=90), [-theta,+theta)')
+    parser.add_argument('--train-rotation-range', type=float, default=180, metavar='theta',
+                        help='rotation range in degrees for training,(Default=180), [-theta,+theta)')
+    parser.add_argument('--eval-rotation-range', type=float, default=90, metavar='theta',
+                        help='rotation range in degrees for evaluation,(Default=90), [-theta,+theta)')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--save', type=int, default=5, metavar='N',
@@ -392,8 +441,8 @@ def main():
                         help='propotion of atan2 penalty loss (Default=0.5)')
     parser.add_argument('--samples', type=int, default=1000, metavar='N',
                         help='No of test samples (Default=1,000)')
-    parser.add_argument('--num-dims', type=int, default=2, metavar='D',
-                        help='Number of dimensions to penalise (Default=2)')
+    parser.add_argument('--proportion', type=float, default=1.0, metavar='P',
+                        help='Proportion of faeture vector to be penalised (Default=1.0)')
     parser.add_argument('--threshold', type=float, default=1e-4, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
     parser.add_argument('--beta', type=float , default=0.85, 
@@ -467,10 +516,6 @@ def main():
 
     model = Autoencoder(args.resnet_type)
 
-    #Initialise decoder weights based on Xaveir initalisation
-    # model.decoder.apply(weights_init)
-    # model.pretrained.maxpool.apply(weights_init)
-
     #Estimate memoery usage
 
     if args.optimizer=='Adam':
@@ -510,19 +555,15 @@ def main():
             # Forward pass
             output, f_data, f_targets = model(data, targets,relative_rotations*np.pi/180) 
             optimizer.zero_grad()
-
-
-            #Loss
-            loss=reconstruction_loss(args,output,targets)
          
-            #loss,reconstruction_loss,atan2_loss=double_loss(args,output,targets,f_data,f_targets)
+            loss,reconstruction_loss,rotation_loss=double_loss(args,output,targets,f_data,f_targets)
             # Backprop
             loss.backward()
             optimizer.step()
 
-            # writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
-            #                          'Reconstruction Loss':reconstruction_loss.item() ,
-            #                          'ata2 Loss': atan2_loss }, n_iter x
+            writer.add_scalars('Mini-batch loss',{'Total Loss':  loss.item(),
+                                      'Reconstruction Loss':reconstruction_loss.item() ,
+                                      'Rotation Loss ': rotation_loss }, n_iter)
             if args.print_progress:
 
                 sys.stdout.write('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\r'
@@ -532,20 +573,29 @@ def main():
 
             
             n_iter+=1
-        ## test_mean, test_std= evaluate_rot_loss(args, model,test_loader,writer, epoch)
-        ## writer.add_scalar('Test error',test_mean,epoch)
 
-        # test_error_mean_log.append(test_mean)
+            break
+
+        #Calculae synthetic rotation loss
+        test_synthetic_mean, test_synthetic_std = eval_synthetic_rot_loss(args, model,test_loader)
+
+        #Calculate real rotation loss
+        test_real_mean, test_real_std =  evaluate_real_rot_loss(args, model,test_loader,writer, epoch)
+
+        
+        writer.add_scalars('Test error', {'synthetic': test_synthetic_mean,'real': test_real_mean},epoch)
+
+        # test_synthetic_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)
 
-        train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
-        sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
-        sys.stdout.flush()
+        #train_loss=evaluate_reconstruction_loss(args,model,train_loader_eval)
+        #sys.stdout.write('Ended epoch {}/{}, Reconstruction loss on train set ={:4f}\n '.format(epoch,args.epochs,train_loss))
+        #sys.stdout.flush()
 
 
         if args.lr_scheduler:
             if args.scheduler_loss=='test':
-                scheduler.step(test_mean)
+                scheduler.step(test_synthetic_mean)
             elif args.scheduler_loss=='train':
                 scheduler.step(train_loss)
             else:

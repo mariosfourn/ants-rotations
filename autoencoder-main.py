@@ -259,11 +259,11 @@ class FeatureVectorLoss(nn.Module):
             x_norm=torch.norm(x_i, p=2, dim=1, keepdim=True)
             y_norm=torch.norm(y_i, p=2, dim=1, keepdim=True)
 
-            if type=='mse':
+            if self.type=='mse':
                 reg_loss+=((dot_prod/(x_norm*y_norm)-1)**2).sum()
-            elif type=='abs':
+            elif self.type=='abs':
                 reg_loss+=(abs(dot_prod/(x_norm*y_norm)-1)).sum()
-            elif type=='L2_norm':
+            elif self.type=='L2_norm':
                 forb_distance=torch.nn.PairwiseDistance()
                 x_polar=x_i/x_norm
                 y_polar=y_i/y_norm
@@ -271,6 +271,7 @@ class FeatureVectorLoss(nn.Module):
            
         if self.size_average:
             reg_loss=reg_loss/x.shape[0]/(ndims//2)
+
         return reg_loss
 
 
@@ -380,10 +381,10 @@ def save_images(args,images, epoch, path, nrow=None):
 def main():
 
     # Training settings
-    list_of_losses=['mse','abs']
+    list_of_losses=['mse','abs','L2_norm']
     list_of_choices=['Adam', 'SGD']
     list_of_loss_to_monitor=['train', 'test']
-    list_of_models=['resnet18,resnet34,resnet50']
+    list_of_models=['resnet18','resnet34','resnet50']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')

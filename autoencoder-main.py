@@ -275,6 +275,8 @@ class FeatureVectorLoss(nn.Module):
         if self.size_average:
             reg_loss=reg_loss/x.shape[0]/(ndims//2)
 
+
+
         return reg_loss
 
 
@@ -290,7 +292,7 @@ def double_loss(args,output,targets,f_data,f_targets):
     #Combine
     reconstruction_loss=L1_loss(output,targets)
 
-    rotation_loss=feature_vector_loss(f_data[:args.num_dims],f_targets[:args.num_dims])
+    rotation_loss=feature_vector_loss(f_data[:,:args.num_dims],f_targets[:,:args.num_dims])
 
     total_loss= (1-args.alpha)*reconstruction_loss+args.alpha*rotation_loss
 
@@ -587,7 +589,7 @@ def main():
         test_synthetic_mean, test_synthetic_std = eval_synthetic_rot_loss(args, model,test_loader)
 
         #Calculate real rotation loss
-        test_real_mean, test_real_std =  evaluate_real_rot_loss(args, model,test_loader,writer, epoch)
+        test_real_mean, test_real_std = evaluate_real_rot_loss(args, model,test_loader,writer, epoch)
 
         
         writer.add_scalars('Test error', {'synthetic': test_synthetic_mean,'real': test_real_mean},epoch)

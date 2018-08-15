@@ -123,7 +123,7 @@ def eval_synthetic_rot_loss(args,model,data_loader):
 
     model.eval()
     #Number of features penalised
-    ndims=round_even(args.proportion*512)
+    ndims=args.num_dims
     error=np.zeros(len(data_loader.dataset))
     counter=0
     with torch.no_grad():
@@ -141,8 +141,8 @@ def eval_synthetic_rot_loss(args,model,data_loader):
             f_targets=model.encoder(targets)
             f_targets=f_targets.view(f_targets.shape[0],-1) #convert 3D vector to 2D
 
-            f_targets_y= f_data[:,range(1,f_targets.shape[1],2)] #Extract y coordinates
-            f_targets_x= f_data[:,range(0,f_targets.shape[1],2)] #Extract x coordinate 
+            f_targets_y= f_targets[:,range(1,f_targets.shape[1],2)] #Extract y coordinates
+            f_targets_x= f_targets[:,range(0,f_targets.shape[1],2)] #Extract x coordinate 
 
             theta_data=torch.atan2(f_data_y,f_data_x).cpu().numpy()*180/np.pi #Calculate absotulue angel of vector
             theta_targets=torch.atan2(f_targets_y,f_targets_x).cpu().numpy()*180/np.pi #Calculate absotulue angel of vector
@@ -164,7 +164,7 @@ def evaluate_real_rot_loss(args, model,dataloader,writer, epoch):
     model.eval()
 
     #Number of features penalised
-    ndims=round_even(args.proportion*512)
+    ndims=args.num_dims
 
     abs_angles=np.zeros((len(dataloader.dataset),ndims//2))
     rotations=np.zeros((len(dataloader.dataset),1))
@@ -207,7 +207,6 @@ def evaluate_real_rot_loss(args, model,dataloader,writer, epoch):
 
     estimated_rotation=convert_to_convetion(abs_angles[valid_idx_samples[:,1]]-abs_angles[valid_idx_samples[:,0]])
 
-
     error=estimated_rotation-valid_rotation_difference
 
     if valid_rotation_difference.shape[1]>2:
@@ -215,6 +214,7 @@ def evaluate_real_rot_loss(args, model,dataloader,writer, epoch):
         writer.add_histogram('Rotation STD hist', std_rotation, epoch)
     
     error=error.mean(axis=1)
+
 
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
@@ -227,10 +227,9 @@ class FeatureVectorLoss(nn.Module):
     Penalty loss on feature vector to ensure that in encodes rotation information
     """
     
-    def __init__(self,proportion, type , size_average=True):
+    def __init__(self, type , size_average=True):
         super(FeatureVectorLoss,self).__init__()
         self.size_average=size_average #flag for mena loss
-        self.proportion=proportion     #proportion of feature vector to be penalised
         self.type=type
         
     def forward(self,x,y):
@@ -244,12 +243,10 @@ class FeatureVectorLoss(nn.Module):
         x=x.view(x.shape[0],-1)
         y=y.view(y.shape[0],-1)
         #Number of features
-        total_dims=x.shape[1]
+        ndims=x.shape[1]
         #Batch size
         batch_size=x.shape[0]
 
-        #Number of features penalised
-        ndims=round_even(self.proportion*total_dims)
         reg_loss=0.0
 
         cosine_similarity=nn.CosineSimilarity(dim=2)
@@ -257,9 +254,9 @@ class FeatureVectorLoss(nn.Module):
         for i in range(0,ndims-1,2):
             x_i=x[:,i:i+2]
             y_i=y[:,i:i+2]
-            dot_prod=torch.bmm(x_i.view(batch_size,1,2),y_i.view(batch_size,2,1)).view(batch_size,1)
-            x_norm=torch.norm(x_i, p=2, dim=1, keepdim=True)
-            y_norm=torch.norm(y_i, p=2, dim=1, keepdim=True)
+            # dot_prod=torch.bmm(x_i.view(batch_size,1,2),y_i.view(batch_size,2,1)).view(batch_size,1)
+            # x_norm=torch.norm(x_i, p=2, dim=1, keepdim=True)
+            # y_norm=torch.norm(y_i, p=2, dim=1, keepdim=True)
 
             if self.type=='mse':
                 reg_loss+= torch.abs(cosine_similarity(x_i.view(x_i.size(0),1,2),y_i.view(y_i.size(0),1,2))-1.0).sum()
@@ -288,12 +285,15 @@ def double_loss(args,output,targets,f_data,f_targets):
 
     #Recostriction L1 Loss
     L1_loss = torch.nn.L1Loss(reduction='elementwise_mean')
-    feature_vector_loss =FeatureVectorLoss(proportion=args.proportion,type=args.loss_type)
+    feature_vector_loss =FeatureVectorLoss(type=args.loss_type)
     
     #Combine
     reconstruction_loss=L1_loss(output,targets)
-    rotation_loss=feature_vector_loss(f_data,f_targets)
+
+    rotation_loss=feature_vector_loss(f_data[:args.num_dims],f_targets[:args.num_dims])
+
     total_loss= (1-args.alpha)*reconstruction_loss+args.alpha*rotation_loss
+
     return total_loss,reconstruction_loss,rotation_loss
 
 
@@ -448,14 +448,16 @@ def main():
                         help='propotion of atan2 penalty loss (Default=0.5)')
     parser.add_argument('--samples', type=int, default=1000, metavar='N',
                         help='No of test samples (Default=1,000)')
-    parser.add_argument('--proportion', type=float, default=1.0, metavar='P',
-                        help='Proportion of faeture vector to be penalised (Default=1.0)')
+    parser.add_argument('--num-dims', type=int, default=2, metavar='D',
+                        help='Number of dimensiosn to be penalised (Default=2.0)')
     parser.add_argument('--threshold', type=float, default=1e-4, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=1e-4)')
     parser.add_argument('--beta', type=float , default=0.85, 
                         help='Blending coeffecient for SSIM loss and L1 loss (Default=0.85)')
     parser.add_argument('--window-size', type=int , default=11, 
                         help='Window size for SSIM loss (Default=11 pixels)')
+    parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='P',
+                        help='dropout applied to feature vector during (Default=0.3)')
 
     args = parser.parse_args()
 
@@ -521,8 +523,7 @@ def main():
 
     # Init model and optimizer
 
-    model = Autoencoder(args.resnet_type)
-
+    model = Autoencoder(args.resnet_type,dropout_rate=args.dropout_rate,num_dims=args.num_dims)
     #Estimate memoery usage
 
     if args.optimizer=='Adam':
@@ -580,6 +581,7 @@ def main():
 
             
             n_iter+=1
+
 
         #Calculae synthetic rotation loss
         test_synthetic_mean, test_synthetic_std = eval_synthetic_rot_loss(args, model,test_loader)

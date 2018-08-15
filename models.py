@@ -7,7 +7,7 @@ class Autoencoder(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self,model_type):
+    def __init__(self,model_type,dropout_rate,num_dims):
         super(Autoencoder, self).__init__()
 
         if model_type=='resnet18':
@@ -29,7 +29,11 @@ class Autoencoder(nn.Module):
 
         self.encoder= nn.Sequential(*list(pretrained.children())[:-1]) 
 
+        self.num_dims=num_dims
+
         self.decoder=Decoder()
+
+        self.dropout=nn.Dropout2d(dropout_rate,inplace=True)
 
 
     def forward(self, x,y,params):
@@ -40,7 +44,11 @@ class Autoencoder(nn.Module):
             params: rotations
         """
         #Encoder 
-        f=self.encoder(x) #feature vector for original image
+        f=self.encoder(x) #feature vector for original image [N,521,1,1]
+
+        #Apply dropout to unpenalised feature vector
+
+        #f[self.num_dims:]=self.dropout(f[self.num_dims:])
        
         f_theta=inverse_feature_transformer(self.encoder(y), params) # feature vector for tranformed image
 

@@ -31,7 +31,7 @@ class Autoencoder(nn.Module):
 
         self.num_dims=num_dims
 
-        self.decoder=Decoder()
+        self.decoder=Decoder(512)
 
         self.dropout=nn.Dropout2d(dropout_rate,inplace=True)
 
@@ -61,6 +61,75 @@ class Autoencoder(nn.Module):
         #Return reconstructed image, feature vector of oringial image, feature vector of transformation
 
         return x, f, f_theta
+
+
+
+class Split_Autoencoder(nn.Module):
+    """docstring for Split_Autoencoder"""
+    def __init__(self, model_type,dropout_rate,num_dims):
+        super(Split_Autoencoder, self).__init__()
+
+        if model_type=='resnet18':
+            pretrained=models.resnet18(pretrained=True)
+        elif model_type=='resnet34':
+            pretrained=models.resnet34(pretrained=True)
+        elif model_type=='resnet50':
+            pretrained=models.resnet50(pretrained=True)
+
+
+        #Replace maxpool layer with convolutional layers
+        pretrained.maxpool=nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+
+        #Replace AvgPool2d witth AdaptiveAvgPool2d
+
+        pretrained.avgpool=nn.AdaptiveAvgPool2d(1) 
+
+        self.num_dims=num_dims
+
+        self.encoder= nn.Sequential(*list(pretrained.children())[:-1]) 
+
+        self.decoder=Decoder(512-num_dims)
+
+        self.dropout=nn.Dropout2d(dropout_rate,inplace=True)
+
+    def forward(self, x,y,params):
+        """
+        Args:
+            x:      untransformed images pytorch tensor
+            y:      transforedm images  pytorch tensor
+            params: rotations
+        """
+        #Encoder 
+        f_x=self.encoder(x) #feature vector for image x [N,512,1,1]
+
+        f_y=self.encoder(y) #feature vector for image y [N,512,1,1]
+
+        #Split the feature vector in 2
+
+        #Images x 
+
+        Eucledian_Vector_x=f_x[:,:self.num_dims]
+
+        Identity_Vector_x=f_x[:,self.num_dims:]
+
+        #Images y
+
+        Eucledian_Vector_y=f_y[:,:self.num_dims]
+
+        Identity_Vector_y=f_y[:,self.num_dims:]
+
+        #Apply FTL on x
+
+        Transformed_Eucledian_Vector_x=feature_transformer(Eucledian_Vector_x, params)
+
+        output=feature_transformer(Identity_Vector_x, params)
+
+        #Decoder
+        output=self.decoder(output)
+
+        #Return reconstructed image, feature vector of oringial image, feature vector of transformation
+        return output, (Identity_Vector_x,Identity_Vector_y),(Transformed_Eucledian_Vector_x,Eucledian_Vector_y)
+
 
 
 def feature_transformer(input, params):
@@ -124,22 +193,21 @@ class NearestUsampling2D(nn.Module):
 
 
 
-
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_dims):
         super(Decoder, self).__init__()
 
         self.decoder=nn.Sequential(
             #2nd dconv layer
-            nn.BatchNorm2d(512), # [N,512,1,1]
-            NearestUsampling2D((2,2)), # [N,512,2,2]
-            nn.Conv2d(512,512,kernel_size=3,stride=1,padding=1), # [N,512,2,2]
-            nn.BatchNorm2d(512),
+            nn.BatchNorm2d(input_dims), # [N,input_dims,1,1]
+            NearestUsampling2D((2,2)), # [N,input_dims,2,2]
+            nn.Conv2d(input_dims,input_dims,kernel_size=3,stride=1,padding=1), # [N,input_dims,2,2]
+            nn.BatchNorm2d(input_dims),
             nn.RReLU(),
 
             #2nd dconv layer
             NearestUsampling2D((4,4)), # [N,512,4,4]
-            nn.Conv2d(512,256,kernel_size=3,stride=1,padding=1), # [N,256,4,4]
+            nn.Conv2d(input_dims,256,kernel_size=3,stride=1,padding=1), # [N,256,4,4]
             nn.BatchNorm2d(256),
             nn.RReLU(),
 

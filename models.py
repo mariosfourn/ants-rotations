@@ -88,7 +88,7 @@ class Split_Autoencoder(nn.Module):
 
         self.encoder= nn.Sequential(*list(pretrained.children())[:-1]) 
 
-        self.decoder=Decoder(512-num_dims)
+        self.decoder=Decoder(512)
 
         self.dropout=nn.Dropout2d(dropout_rate,inplace=True)
 
@@ -99,15 +99,20 @@ class Split_Autoencoder(nn.Module):
             y:      transforedm images  pytorch tensor
             params: rotations
         """
-        #Encoder 
         f_x=self.encoder(x) #feature vector for image x [N,512,1,1]
 
         f_y=self.encoder(y) #feature vector for image y [N,512,1,1]
 
-        #Split the feature vector in 2
+        #Apply FTL only on eucledian vector of f_x
 
-        #Images x 
+        f_x[:,:self.num_dims]=feature_transformer(f_x[:,:self.num_dims], params)
 
+        output=feature_transformer(f_x, params)
+        #Decoder
+        output=self.decoder(output)
+
+        
+        #Split vector to orientation and identity 
         Eucledian_Vector_x=f_x[:,:self.num_dims]
 
         Identity_Vector_x=f_x[:,self.num_dims:]
@@ -120,15 +125,8 @@ class Split_Autoencoder(nn.Module):
 
         #Apply FTL on x
 
-        Transformed_Eucledian_Vector_x=feature_transformer(Eucledian_Vector_x, params)
-
-        output=feature_transformer(Identity_Vector_x, params)
-
-        #Decoder
-        output=self.decoder(output)
-
         #Return reconstructed image, feature vector of oringial image, feature vector of transformation
-        return output, (Identity_Vector_x,Identity_Vector_y),(Transformed_Eucledian_Vector_x,Eucledian_Vector_y)
+        return output, (Identity_Vector_x,Identity_Vector_y),(Eucledian_Vector_x,Eucledian_Vector_y)
 
 
 

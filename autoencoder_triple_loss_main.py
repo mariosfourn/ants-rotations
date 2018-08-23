@@ -308,14 +308,25 @@ def triple_loss(args,targets, output,identity, eucledian):
 
     #2 Eucledian space loss
 
-    eucledian_loss=EucledianVectorLoss(type=args.loss_type)
+    # eucledian_loss=EucledianVectorLoss(type=args.loss_type)
 
-    rotation_loss=eucledian_loss(x_eucledian,y_eucledian)
+    # rotation_loss=eucledian_loss(x_eucledian,y_eucledian)
+
+    cosine_similarity=nn.CosineSimilarity(dim=2)
+
+    rotation_loss=torch.abs(cosine_similarity(x_eucledian.view(x_eucledian.size(0),1,2),
+        y_eucledian.view(y_eucledian.size(0),1,2))-1.0).mean()
+
 
     #3 Idenity loss (L2 distance)
 
-    identity_loss=F.pairwise_distance(x_identity,y_identity, p=2)
+    # identity_loss=F.pairwise_distance(x_identity,y_identity, p=2)
     
+    # identity_loss=identity_loss.mean()
+
+    identity_loss=F.pairwise_distance(x_identity/x_identity.norm(dim=1,keepdim=True)
+        ,y_identity/y_identity.norm(dim=1,keepdim=True), p=2)
+
     identity_loss=identity_loss.mean()
  
     total_loss=args.alpha*rotation_loss + args.gamma * identity_loss + (1-args.alpha-args.gamma)*recon_loss

@@ -443,8 +443,6 @@ def main():
                         help='learning rate (default: 0.0001)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    # parser.add_argument('--seed', type=int, default=1, metavar='S',
-    #                     help='random seed (default: 1)')
     parser.add_argument('--name', type=str, default='',
                         help='name of the run that is added to the output directory')
     parser.add_argument('--optimizer', type=str, default='Adam', choices= list_of_choices,
@@ -477,7 +475,7 @@ def main():
                         help='rotation range in degrees for evaluation,(Default=90), [-theta,+theta)')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
-    parser.add_argument('--save', type=int, default=5, metavar='N',
+    parser.add_argument('--save', type=int, default=10, metavar='N',
                         help='save model every this number of epochs (Default=5)')
     parser.add_argument('--recon-test-epochs', type=int, default=5, metavar='N',
                         help='Epochs intervals fro reconstruction test (Default=5)')
@@ -499,6 +497,8 @@ def main():
                         help='Window size for SSIM loss (Default=11 pixels)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, metavar='P',
                         help='dropout applied to feature vector during (Default=0.3)')
+    parser.add_argument('--not-pretrained',action='store_true', default=False, 
+                        help='Start with non-pretrained ResNet network (Default=False)')
 
     args = parser.parse_args()
 
@@ -564,7 +564,8 @@ def main():
 
     # Init model and optimizer
 
-    model = Split_Autoencoder(args.resnet_type,dropout_rate=args.dropout_rate,num_dims=args.num_dims)
+    model = Split_Autoencoder(args.resnet_type,dropout_rate=args.dropout_rate,
+        num_dims=args.num_dims,pretrained=not args.not_pretrained)
     #Estimate memoery usage
 
     if args.optimizer=='Adam':
@@ -616,7 +617,7 @@ def main():
 
             writer.add_scalars('Mini-batch loss',{'Total Loss':  losses[0].item(),
                                        'Rotation Loss ': losses[1].item(),
-                                       'Identiry Loss': losses[2].item(),
+                                       'Identity Loss': losses[2].item(),
                                       'Reconstruction Loss ': losses[-1].item() }, n_iter)
             if args.print_progress:
 

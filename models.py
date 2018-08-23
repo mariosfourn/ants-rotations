@@ -7,15 +7,15 @@ class Autoencoder(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self,model_type,dropout_rate,num_dims):
+    def __init__(self,model_type,dropout_rate,num_dims,pretrained):
         super(Autoencoder, self).__init__()
 
         if model_type=='resnet18':
-            pretrained=models.resnet18(pretrained=True)
+            pretrained=models.resnet18(pretrained=pretrained)
         elif model_type=='resnet34':
-            pretrained=models.resnet34(pretrained=True)
+            pretrained=models.resnet34(pretrained=pretrained)
         elif model_type=='resnet50':
-            pretrained=models.resnet50(pretrained=True)
+            pretrained=models.resnet50(pretrained=pretrained)
 
 
         #Replace maxpool layer with convolutional layers
@@ -66,15 +66,15 @@ class Autoencoder(nn.Module):
 
 class Split_Autoencoder(nn.Module):
     """docstring for Split_Autoencoder"""
-    def __init__(self, model_type,dropout_rate,num_dims):
+    def __init__(self,model_type,dropout_rate,num_dims,pretrained):
         super(Split_Autoencoder, self).__init__()
 
         if model_type=='resnet18':
-            pretrained=models.resnet18(pretrained=True)
+            pretrained=models.resnet18(pretrained=pretrained)
         elif model_type=='resnet34':
-            pretrained=models.resnet34(pretrained=True)
+            pretrained=models.resnet34(pretrained=pretrained)
         elif model_type=='resnet50':
-            pretrained=models.resnet50(pretrained=True)
+            pretrained=models.resnet50(pretrained=pretrained)
 
 
         #Replace maxpool layer with convolutional layers

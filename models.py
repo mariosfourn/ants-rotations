@@ -107,9 +107,9 @@ class Split_Autoencoder(nn.Module):
 
         f_x[:,:self.num_dims]=feature_transformer(f_x[:,:self.num_dims], params)
 
-        output=feature_transformer(f_x, params)
+        #output=feature_transformer(f_x, params)
         #Decoder
-        output=self.decoder(output)
+        output=self.decoder(f_x)
 
         
         #Split vector to orientation and identity 

@@ -15,9 +15,9 @@ import random
 import itertools
 import pytorch_ssim
 
-#import matplotlib
+import matplotlib
 from scipy.ndimage.interpolation import rotate
-#matplotlib.use('agg')
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import rotate
 from torchvision import datasets, transforms

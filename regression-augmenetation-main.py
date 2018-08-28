@@ -237,8 +237,8 @@ def main():
                         help='number of test batches (default: 10)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 50)')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
+    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+                        help='learning rate (default: 1e-4)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -282,9 +282,10 @@ def main():
 
     use_cuda = torch.cuda.is_available()
 
-    print('Amgrad set to {}\n'.format(args.amsgrad))
-    print('Rotation augmentation set to {}\n'.format(args.rot_augment))
-
+    # Print arguments
+    for arg in vars(args):
+        sys.stdout.write('{} = {} \n'.format(arg,  getattr(args, arg)))
+        sys.stdout.flush()
 
     torch.manual_seed(args.seed)
 
@@ -319,8 +320,9 @@ def main():
         eval_transformations=transforms.Compose([transforms.ToPILImage(),
             transforms.Resize((args.image_resize,args.image_resize)),
             transforms.FiveCrop(args.random_crop_size),
-            (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
-            normalise])
+            (lambda crops: torch.stack([transforms.Compose(
+                [transforms.ToTensor(), normalise])(crop) for crop in crops])),
+            ])
     else:
 
         #Use batchnorm instead

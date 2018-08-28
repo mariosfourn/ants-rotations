@@ -47,7 +47,6 @@ def save_model(args,model,epoch):
 
 
 
-
 class AntsDataset(Dataset):
     """Ants Dataset"""
 
@@ -145,7 +144,7 @@ class RotNet(nn.Module):
     """
     Autoencoder module for intepretable transformations
     """
-    def __init__(self,model_type):
+    def __init__(self,model_type,batchnorm):
         super(RotNet, self).__init__()
 
         if model_type=='resnet18':
@@ -155,22 +154,28 @@ class RotNet(nn.Module):
         elif model_type=='resnet34':
             pretrained=models.resnet50(pretrained=True)
 
-        #Add Batchnorm 2d at the beginnign instead of nornalising image
-
+    
         #Replace average pooling with adaptive pooling
 
         pretrained.avgpool=nn.AdaptiveAvgPool2d(1)
 
         # #Replace last fc layer
         pretrained.fc=nn.Sequential(nn.Linear(512,256),
+                                     nn.ReLU(),
                                      nn.Linear(256,1))
-        #pretrained.fc=nn.Linear(512,1)
 
+        #Apply batchnorm in input images if batchnorm flag is true
 
-        self.network=nn.Sequential(
-            nn.BatchNorm2d(3),
-            pretrained,
-            nn.Sigmoid())
+        if batchnorm:
+            self.network=nn.Sequential(
+                nn.BatchNorm2d(3),
+                pretrained,
+                nn.Sigmoid())
+        else:
+
+            self.network=nn.Sequential(
+                pretrained,
+                nn.Sigmoid())
         
     def forward(self, x):
 
@@ -270,7 +275,8 @@ def main():
                         help='Turn on amsgrad in Adam optimiser')
     parser.add_argument('--rot-augment', action='store_true', default=False, 
                         help='Augment Rotations')
-
+    parser.add_argument('--normalise', action='store_true', default=False, 
+                        help='If set  to true normalises the input data wrt to ImageNet mean and std')
 
     args = parser.parse_args()
 
@@ -281,6 +287,9 @@ def main():
 
 
     torch.manual_seed(args.seed)
+
+    normalise = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
 
 
     #1st sequnce of ants
@@ -297,17 +306,35 @@ def main():
     test_rot_dir='./ants_dataset_ratio3_combined/test_rotations.csv'
 
     #Torchvision transformation
-    train_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.RandomCrop(size=args.random_crop_size, pad_if_needed=True),
-        transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
-        transforms.ToTensor()])
 
-    eval_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.FiveCrop(args.random_crop_size),
-        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
-        ]) 
+    if args.normalise:
+        # Normalise wtr to ImageNet mean and std
+        train_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.RandomCrop(size=args.random_crop_size, pad_if_needed=True),
+            transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+            transforms.ToTensor(),
+            normalise])
+
+        eval_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.FiveCrop(args.random_crop_size),
+            (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
+            normalise])
+    else:
+
+        #Use batchnorm instead
+        train_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.RandomCrop(size=args.random_crop_size, pad_if_needed=True),
+            transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+            transforms.ToTensor()])
+
+        eval_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.FiveCrop(args.random_crop_size),
+            (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))])
+
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(
@@ -323,7 +350,8 @@ def main():
 
     # Init model and optimizer
 
-    model = RotNet(args.resnet_type)
+    model = RotNet(args.resnet_type,not args.normalise)
+    print(model)
 
     #Estimate memoery usage
 

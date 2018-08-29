@@ -197,7 +197,7 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
  
     estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
-    error=estimated_rotation-valid_rotation_difference   
+    error=convert_to_convetion(estimated_rotation-valid_rotation_difference)   
     
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
@@ -466,8 +466,7 @@ def main():
             transforms.Resize((args.image_resize,args.image_resize)),
             transforms.FiveCrop(args.random_crop_size),
             (lambda crops: torch.stack([transforms.Compose(
-                [transforms.ToTensor(), normalise])(crop) for crop in crops])),
-            ])
+                [transforms.ToTensor(), normalise])(crop) for crop in crops]))])
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(
@@ -559,7 +558,7 @@ def main():
         # sys.stdout.write('Ended epoch {}/{}, Train ={:4f}\n '.format(epoch,args.epochs,train_mean))
         # sys.stdout.flush()
 
-        test_mean, test_std=evaluate_rot_loss(args,model,test_loader,writer,epoch,train=False)
+        test_mean, test_std=evaluate_rot_loss(args,model,test_loader)
 
 
         # test_error_mean_log.append(test_mean)

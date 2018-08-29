@@ -465,7 +465,9 @@ def main():
         eval_transformations=transforms.Compose([transforms.ToPILImage(),
             transforms.Resize((args.image_resize,args.image_resize)),
             transforms.FiveCrop(args.random_crop_size),
-            (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))])
+            (lambda crops: torch.stack([transforms.Compose(
+                [transforms.ToTensor(), normalise])(crop) for crop in crops])),
+            ])
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(

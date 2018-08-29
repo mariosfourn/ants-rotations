@@ -30,22 +30,22 @@ from PIL import Image
 import ipdb
 
 
-from layers_2D import RotConv, VectorMaxPool, VectorBatchNorm, Vector2Magnitude, VectorUpsampling
+
 
 
 class Encoder(nn.Module):
     """
     Encoder to 2-dimnesional space
     """
-    def __init__(self,model_type):
+    def __init__(self,model_type,pretrained):
         super(Encoder, self).__init__()
 
         if model_type=='resnet18':
-            pretrained=models.resnet18(pretrained=True)
+            pretrained=models.resnet18(pretrained=pretrained)
         elif model_type=='resnet34':
-            pretrained=models.resnet34(pretrained=True)
+            pretrained=models.resnet34(pretrained=pretrained)
         elif model_type=='resnet50':
-            pretrained=models.resnet50(pretrained=True)
+            pretrained=models.resnet50(pretrained=pretrained)
 
 
         #Replace maxpool layer with convolutional layers
@@ -211,9 +211,9 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
     length=rotations.shape[0]
 
     #Get all possible combinations from the test dataset
-    idx_samples=np.array(list(itertools.product(range(length),range(length))))
+    # idx_samples=np.array(list(itertools.product(range(length),range(length))))
 
-    # idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
 
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
@@ -366,13 +366,12 @@ def main():
     list_of_losses=['cosine_abs','cosine_mse','forbenius']
     list_of_choices=['Adam', 'SGD']
     list_of_resnet=['resnet18','resnet34','resnet50']
-    list_of_models=['resnet', 'RotEqNet']
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('-eval-batch-size', type=int, default=100, metavar='N',
                         help='eval batch size (default: 100)')
-    parser.add_argument('--epochs', type=int, default=30, metavar='N',
+    parser.add_argument('--epochs', type=int, default=60, metavar='N',
                         help='number of epochs to train (default: 30)')
     parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 0.0001)')
@@ -398,17 +397,17 @@ def main():
                         help='size for resizing input image (Default=120)')
     parser.add_argument('--random-crop-size', type=int, default=100,
                         help='random crop image size in pixel (Default=100)')
-    parser.add_argument('--brightness', type=float, default=0,
+    parser.add_argument('--brightness', type=float, default=0.2,
                         help='brightness factor for ColorJitter augmentation')
-    parser.add_argument('--contrast', type=float, default=0,
+    parser.add_argument('--contrast', type=float, default=0.2,
                         help='contrast factor for ColorJitter augmentation')
-    parser.add_argument('--saturation', type=float, default=0,
+    parser.add_argument('--saturation', type=float, default=0.1,
                         help='saturation factor for ColorJitter augmentation')
-    parser.add_argument('--hue', type=float, default=0,
+    parser.add_argument('--hue', type=float, default=0.07,
                         help='hue factor for ColorJitter augmentation')
     parser.add_argument('--eval-rotation-range', type=float, default=90, metavar='theta',
                         help='evalutation rotation range in degrees for training,(Default=90), [-theta,+theta)')
-    parser.add_argument('--train-rotation-range', type=float, default=180, metavar='theta',
+    parser.add_argument('--train-rotation-range', type=float, default=90, metavar='theta',
                         help='training rotation range in degrees for training,(Defaul=180), [-theta,+theta)')
     parser.add_argument('--sample-mini-batch', action='store_true', default=False, 
                         help='Sample Mini-batch for pairs')
@@ -418,12 +417,19 @@ def main():
                         help='save model every this number of epochs (Default=5)')
     parser.add_argument('--loss', type=str, default='cosine_abs', choices= list_of_losses,
                         help="type of loss for atan2 penalty loss [abs,mse,forbenius] (Default= abs)")
-    # parser.add_argument('--samples', type=int, default=1000, metavar='N',
-    #                     help='No of test samples (Default=1,000)')
+    parser.add_argument('--samples', type=int, default=1000, metavar='N',
+                        help='No of test samples (Default=1,000)')
     parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
-    parser.add_argument('--model', type=str, default='resnet', metavar='M',choices= list_of_models,
-                        help='choose encoder type [resnet, RotEqNet], (Default=resnet)')
+    parser.add_argument('--no-pretrained', action='store_true', default=False,
+                        help='start from non-pretrained reset (Default=False)')
+    parser.add_argument('--no-data-crop', action='store_true', default=False,
+                        help='Remove cropping of dataset for both training and test (Default=False)')
+    parser.add_argument('--rot-augment', action='store_true', default=False, 
+                        help='Augment Rotations')
+    parser.add_argument('--random-rotation-range', type=float, default=30, metavar='theta',
+                        help='random rotation range in degrees for training [-theta,+theta)')
+
 
     args = parser.parse_args()
 
@@ -436,10 +442,12 @@ def main():
     sys.stdout.write('Random torch seed:{}\n'.format( torch.initial_seed()))
     sys.stdout.flush()
 
-    #torch.manual_seed(args.seed)
 
-    ImageNet_mean=[0.485, 0.456, 0.406]
-    ImageNet_STD=[0.229, 0.224, 0.225]
+    torch.manual_seed(args.seed)
+
+    normalise = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+
 
     #1st sequnce of ants
     ants1_root_dir='./ants1_dataset_ratio3'
@@ -454,19 +462,36 @@ def main():
     test_rot_dir='./ants_dataset_ratio3_combined/test_rotations.csv'
 
     #Torchvision transformation
-    train_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize)),
-        #transforms.CenterCrop(size=args.random_crop_size),
-        transforms.RandomCrop(size=args.random_crop_size),
-        #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
-        transforms.ToTensor()])
 
-    eval_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize)),
-       # transforms.CenterCrop(size=args.random_crop_size),
-        # transforms.ToTensor()])
-        transforms.FiveCrop(args.random_crop_size),
-        (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))]) 
+
+    if args.no_data_crop:
+        #Remove cropping of dataset
+
+        train_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.random_crop_size,args.random_crop_size)),
+            transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+            transforms.ToTensor(),
+            normalise])
+
+        eval_transformations=transforms.Compose([transforms.ToPILImage(),
+           transforms.Resize((args.random_crop_size,args.random_crop_size)),
+          transforms.ToTensor(),normalise])
+
+    else:
+        #Apply random crop to training set 
+        train_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.RandomCrop(size=args.random_crop_size),
+            transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+            transforms.ToTensor(),
+            normalise])
+
+        #Apply FiveCrop to Test set
+       
+        eval_transformations=transforms.Compose([transforms.ToPILImage(),
+            transforms.Resize((args.image_resize,args.image_resize)),
+            transforms.FiveCrop(args.random_crop_size),
+            (lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))])
     #Apply tranformtations
 
     train_loader = torch.utils.data.DataLoader(
@@ -483,10 +508,8 @@ def main():
 
     # Init model and optimizer
 
-    if args.model=='resnet':
-        model = Encoder(args.resnet_type)
-    else:
-        model = RotEqNet()
+    model = Encoder(args.resnet_type,not args.no_pretrained)
+
     #Estimate memoery usage
 
     if args.optimizer=='Adam':
@@ -509,10 +532,6 @@ def main():
     sys.stdout.write('Start training\n')
     sys.stdout.flush()
 
-    test_error_mean_log=[]
-    test_error_std_log=[]
-    train_error_mean_log=[]
-    train_error_std_log=[]
 
     n_iter=0
     for epoch in range(1, args.epochs + 1):
@@ -522,10 +541,16 @@ def main():
         for batch_idx, (data,rotations)  in enumerate(train_loader):
             model.train()
 
+            #Apply rotation augmentation
+            if args.rot_augment:
+                data,random_rotation=rotate_tensor(args,data) 
+
+                rotations=convert_to_convetion(rotations.float()+random_rotation)
+
             f_data=model(data)
 
             rotations=rotations.float()
-            #Apply rotation matrix to sample 1 to bring to saample 2
+
 
             #Relative rotation is between sample2 - sample1
             sample1,sample2,relative_rotations=sample_data(args,f_data,rotations)
@@ -554,18 +579,18 @@ def main():
 
             n_iter+=1
 
-        train_mean, train_stderr=evaluate_rot_loss(args,model,train_loader_eval,writer,epoch,train=True)
-        sys.stdout.write('Ended epoch {}/{}, Train ={:4f}\n '.format(epoch,args.epochs,train_mean))
-        sys.stdout.flush()
+        # train_mean, train_stderr=evaluate_rot_loss(args,model,train_loader_eval,writer,epoch,train=True)
+        # sys.stdout.write('Ended epoch {}/{}, Train ={:4f}\n '.format(epoch,args.epochs,train_mean))
+        # sys.stdout.flush()
 
         test_mean, test_std=evaluate_rot_loss(args,model,test_loader,writer,epoch,train=False)
 
-        test_error_mean_log.append(test_mean)
-        test_error_std_log.append(test_std)
-        train_error_mean_log.append(train_mean)
-        train_error_std_log.append(train_stderr)
+        # test_error_mean_log.append(test_mean)
+        # test_error_std_log.append(test_std)
+        # train_error_mean_log.append(train_mean)
+        # train_error_std_log.append(train_stderr)
 
-        writer.add_scalars('Losses',{'Train Loss': train_mean, 'Test_loss':test_mean},epoch)
+        writer.add_scalars('Test Losses',{'Test Mean': test_mean, 'Test STD':test_std},epoch)
 
         if args.lr_scheduler:
             if args.scheduler_loss=='test':
@@ -579,8 +604,8 @@ def main():
         if epoch%args.save==0:
             save_model(args,model,epoch)
 
-    plot_error(args,np.array(train_error_mean_log),np.array(train_error_std_log),
-       np.array(test_error_mean_log),np.array(test_error_std_log) ,logging_dir)
+    # plot_error(args,np.array(train_error_mean_log),np.array(train_error_std_log),
+    #    np.array(test_error_mean_log),np.array(test_error_std_log) ,logging_dir)
 
 
 def plot_error(args,train_mean,train_std,test_mean,test_std,path):

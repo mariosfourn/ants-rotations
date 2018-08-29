@@ -58,8 +58,10 @@ class Encoder(nn.Module):
         #Remove the last  fc layer anx call in encoder
 
         self.encoder= nn.Sequential(*list(pretrained.children())[:-1], 
-                     nn.Conv2d(512,2,1),
-                     nn.Tanh()) 
+                     nn.ReLU(),
+                     nn.Conv2d(512,256,1),
+                     nn.ReLU(),
+                     nn.Conv2d(256,2,1)) 
 
     def forward(self,x):
         return self.encoder(x)
@@ -200,9 +202,11 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
             f_data_y= f_data_avg[:,1] #Extract y coordinates
             f_data_x= f_data_avg[:,0] #Extract x coordinates
 
-            absolute_angles[counter:counter+data.shape[0]]=torch.atan2(f_data_y,f_data_x).cpu().numpy().reshape(-1,1)*180/np.pi #Calculate absotulue angel of vectoe
-            rotations[counter:counter+data.shape[0]]=batch_rotations.reshape(-1,1)
-            counter+=data.shape[0]
+            batch_size=batch_rotations.shape[0]
+
+            absolute_angles[counter:counter+batch_size]=torch.atan2(f_data_y,f_data_x).cpu().numpy().reshape(-1,1)*180/np.pi #Calculate absotulue angel of vectoe
+            rotations[counter:counter+batch_size]=batch_rotations.reshape(-1,1)
+            counter+=batch_size
 
     length=rotations.shape[0]
 

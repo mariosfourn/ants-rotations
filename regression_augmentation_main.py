@@ -83,7 +83,6 @@ def map_to_circle(input):
     """
 
     input[input<0]=input[input<0]+360
-    input[input>360]=input[input>360]-360
     
     return input/360
 
@@ -392,6 +391,8 @@ def main():
                 data,random_rotation=rotate_tensor(args,data) 
 
                 rotations=rotations.float()+random_rotation
+
+            import ipdb; ipdb.set_trace()
 
             rotations=map_to_circle(rotations).view(-1,1).float()   #in the range [0,1]8
 

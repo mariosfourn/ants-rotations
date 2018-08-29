@@ -148,7 +148,7 @@ def convert_to_convetion(input):
     
     return input
 
-def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
+def evaluate_rot_loss(args, model,dataloader):
 
     model.eval()
 

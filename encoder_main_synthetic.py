@@ -69,7 +69,9 @@ def eval_synthetic_rot_loss(args,model,data_loader):
     model.eval()
     #Number of features penalised
     error=np.zeros(len(data_loader.dataset))
+
     start_index=0
+
     with torch.no_grad():
         for data,_ in data_loader:
             ## Reshape data
@@ -95,9 +97,8 @@ def eval_synthetic_rot_loss(args,model,data_loader):
             
             estimated_angle=convert_to_convetion(estimated_angle)
 
-
-            error[start_index:start_index+data.shape[0]]=estimated_angle-rotations.numpy()*180/np.pi
-            
+            error[start_index:start_index+data.shape[0]]=convert_to_convetion(estimated_angle-rotations.numpy())
+          
             start_index+=data.shape[0]
            
     return  abs(error).mean(), error.std()
@@ -463,17 +464,17 @@ def main():
 
     #Torchvision transformation
 
-
-
     train_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.random_crop_size,args.random_crop_size)),
-        transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+        transforms.Resize((args.image_resize,args.image_resize)),
+        transforms.CenterCrop(args.random_crop_size),
+        #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor(),
         normalise])
 
     eval_transformations=transforms.Compose([transforms.ToPILImage(),
-       transforms.Resize((args.random_crop_size,args.random_crop_size)),
-      transforms.ToTensor(),normalise])
+        transforms.Resize((args.image_resize,args.image_resize)),
+        transforms.CenterCrop(args.random_crop_size),
+        transforms.ToTensor(),normalise])
 
     #Apply tranformtations
 

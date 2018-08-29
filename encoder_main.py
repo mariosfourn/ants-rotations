@@ -187,9 +187,9 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
 
 
     #Get all possible combinations from the test dataset
-    # idx_samples=np.array(list(itertools.product(range(length),range(length))))
+    idx_samples=np.array(list(itertools.product(range(length),range(length))))
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+    # idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
 
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
@@ -560,6 +560,7 @@ def main():
         # sys.stdout.flush()
 
         test_mean, test_std=evaluate_rot_loss(args,model,test_loader,writer,epoch,train=False)
+
 
         # test_error_mean_log.append(test_mean)
         # test_error_std_log.append(test_std)

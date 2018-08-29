@@ -105,7 +105,7 @@ class Split_Autoencoder(nn.Module):
 
         #Apply FTL only on eucledian vector of f_x
 
-        f_x[:,:self.num_dims]=feature_transformer(f_x[:,:self.num_dims], params)
+        #f_x[:,:self.num_dims]=feature_transformer(f_x[:,:self.num_dims], params)
 
         #output=feature_transformer(f_x, params)
         #Decoder

@@ -83,6 +83,7 @@ def map_to_circle(input):
     """
 
     input[input<0]=input[input<0]+360
+    input[input>360]=input[input>360]-360
     
     return input/360
 
@@ -387,6 +388,7 @@ def main():
 
             #conver negative anlge to positive
             if args.rot_augment:
+
                 data,random_rotation=rotate_tensor(args,data) 
 
                 rotations=rotations.float()+random_rotation

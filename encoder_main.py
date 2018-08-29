@@ -58,8 +58,7 @@ class Encoder(nn.Module):
                      nn.ReLU(),
                      nn.Conv2d(512,256,1),
                      nn.ReLU(),
-                     nn.Conv2d(256,2,1),
-                     nn.Tanh()) 
+                     nn.Conv2d(256,2,1)) 
 
     def forward(self,x):
         return self.encoder(x)

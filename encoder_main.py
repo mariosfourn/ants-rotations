@@ -525,8 +525,6 @@ def main():
             f_data=model(data)
 
             rotations=rotations.float()
-
-
             #Relative rotation is between sample2 - sample1
             sample1,sample2,relative_rotations=sample_data(args,f_data,rotations)
 

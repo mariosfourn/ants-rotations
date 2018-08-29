@@ -30,8 +30,6 @@ import ipdb
 
 
 
-
-
 class Encoder(nn.Module):
     """
     Encoder to 2-dimnesional space
@@ -403,7 +401,7 @@ def main():
                         help='Remove cropping of dataset for both training and test (Default=False)')
     parser.add_argument('--rot-augment', action='store_true', default=False, 
                         help='Augment Rotations')
-    parser.add_argument('--random-rotation-range', type=float, default=30, metavar='theta',
+    parser.add_argument('--rotation-range', type=float, default=30, metavar='theta',
                         help='random rotation range in degrees for training [-theta,+theta)')
 
 

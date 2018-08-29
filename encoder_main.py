@@ -14,7 +14,6 @@ import torchvision
 import random
 import itertools
 import pytorch_ssim
-sys.path.append('./../RotEqNet')
 #import matplotlib
 from scipy.ndimage.interpolation import rotate
 #matplotlib.use('agg')
@@ -67,30 +66,6 @@ class Encoder(nn.Module):
         return self.encoder(x)
 
 
-class RotEqNet(nn.Module):
-    """
-    Encoder to 2-dimnesional space
-    """
-    def __init__(self):
-        super(RotEqNet, self).__init__()
-
-        self.encoder=nn.Sequential(
-            RotConv(3,6,[9,9] ,stride=1, n_angles=17,mode=1),
-            VectorBatchNorm(6),
-            RotConv(6,6,[9,9], stride=2, n_angles=17,mode=2),
-            VectorBatchNorm(6),
-            RotConv(6,12,[9,9],stride=1,n_angles=17,mode=2),
-            VectorBatchNorm(12),
-            RotConv(12,12,[9,9],stride=2,n_angles=17,mode=2),
-            VectorBatchNorm(12),
-            Vector2Magnitude(),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(12,2,1),
-            nn.Tanh())
-
-
-    def forward(self,x):
-        return self.encoder(x)
 
 def feature_transformer(input, params):
     """Apply  rotation matrix every 2 dimensions
@@ -209,6 +184,7 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
             counter+=batch_size
 
     length=rotations.shape[0]
+
 
     #Get all possible combinations from the test dataset
     # idx_samples=np.array(list(itertools.product(range(length),range(length))))

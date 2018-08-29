@@ -210,7 +210,10 @@ def evaluate_rot_loss(args, model,dataloader,writer,epoch,train):
 
     length=rotations.shape[0]
 
-    idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
+    #Get all possible combinations from the test dataset
+    idx_samples=np.array(list(itertools.product(range(length),range(length))))
+
+    # idx_samples=np.array(random.sample(list(itertools.product(range(length),range(length))),args.samples))
 
     rotation_difference=convert_to_convetion(rotations[idx_samples[:,1]]-rotations[idx_samples[:,0]])
 
@@ -405,18 +408,18 @@ def main():
                         help='hue factor for ColorJitter augmentation')
     parser.add_argument('--eval-rotation-range', type=float, default=90, metavar='theta',
                         help='evalutation rotation range in degrees for training,(Default=90), [-theta,+theta)')
-    parser.add_argument('--train-rotation-range', type=float, default=120, metavar='theta',
-                        help='training rotation range in degrees for training,(Defaul=120), [-theta,+theta)')
+    parser.add_argument('--train-rotation-range', type=float, default=180, metavar='theta',
+                        help='training rotation range in degrees for training,(Defaul=180), [-theta,+theta)')
     parser.add_argument('--sample-mini-batch', action='store_true', default=False, 
                         help='Sample Mini-batch for pairs')
     parser.add_argument('--amsgrad', action='store_true', default=False, 
                         help='Turn on amsgrad in Adam optimiser')
-    parser.add_argument('--save', type=int, default=5, metavar='N',
+    parser.add_argument('--save', type=int, default=10, metavar='N',
                         help='save model every this number of epochs (Default=5)')
     parser.add_argument('--loss', type=str, default='cosine_abs', choices= list_of_losses,
                         help="type of loss for atan2 penalty loss [abs,mse,forbenius] (Default= abs)")
-    parser.add_argument('--samples', type=int, default=1000, metavar='N',
-                        help='No of test samples (Default=1,000)')
+    # parser.add_argument('--samples', type=int, default=1000, metavar='N',
+    #                     help='No of test samples (Default=1,000)')
     parser.add_argument('--threshold', type=float, default=0.1, metavar='l',
                         help='ReduceLROnPlateau signifance threshold (Default=0.1)')
     parser.add_argument('--model', type=str, default='resnet', metavar='M',choices= list_of_models,

@@ -553,7 +553,7 @@ def main():
                 100. * batch_idx / len(train_loader), loss.item()))
                 sys.stdout.flush()
 
-            n_iter+=1
+            n_iter+=1git 
 
         #Evaluate real rotation loss
 

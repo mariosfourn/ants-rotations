@@ -308,8 +308,6 @@ def rotate_tensor(args,input,rotation_range):
         output=random_crop(output, args.random_crop_size,args.random_crop_size,offset)
         outputs.append(output)
 
-        import ipdb;ipdb.set_trace()
-
     outputs=np.stack(outputs, 0)
 
     return torch.from_numpy(outputs), torch.from_numpy(angles)

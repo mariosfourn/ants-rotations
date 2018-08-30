@@ -465,9 +465,8 @@ def main():
     #Torchvision transformation
 
     train_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize)),
-        transforms.CenterCrop(args.random_crop_size),
-        #transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
+        transforms.Resize((args.image_resize,args.image_resize))
+        transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor(),
         normalise])
 

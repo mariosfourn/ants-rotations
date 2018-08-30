@@ -376,7 +376,7 @@ def main():
     parser = argparse.ArgumentParser(description='ResNet50 Regressor for Ants ')
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
-    parser.add_argument('-eval-batch-size', type=int, default=100, metavar='N',
+    parser.add_argument('--eval-batch-size', type=int, default=100, metavar='N',
                         help='eval batch size (default: 100)')
     parser.add_argument('--epochs', type=int, default=60, metavar='N',
                         help='number of epochs to train (default: 30)')
@@ -465,7 +465,7 @@ def main():
     #Torchvision transformation
 
     train_transformations=transforms.Compose([transforms.ToPILImage(),
-        transforms.Resize((args.image_resize,args.image_resize))
+        transforms.Resize((args.image_resize,args.image_resize)),
         transforms.ColorJitter(brightness=args.brightness, contrast=args.contrast, saturation=args.saturation, hue=args.hue),
         transforms.ToTensor(),
         normalise])

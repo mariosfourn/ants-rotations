@@ -75,6 +75,8 @@ def eval_synthetic_rot_loss(args,model,data_loader):
     with torch.no_grad():
         for data,_ in data_loader:
             ## Reshape data
+            data=data[:,4,...]
+         
             targets,rotations=rotate_tensor(args,data,args.eval_rotation_range)
 
             # Forward passes
@@ -199,14 +201,20 @@ def evaluate_rot_loss(args, model,dataloader):
         
         for batch_idx, (data,batch_rotations) in enumerate(dataloader):
 
-            f_data=model(data)
-            f_data=f_data.view(-1,2)
+            bs, ncrops, c, h, w = data.size()
+   
+            f_data=model(data.view(-1,c,h,w))
 
+            #f_data=model(data)
+
+            #Average results from 5 crops
+
+            f_data_avg = f_data.view(bs, ncrops, -1).mean(1)
 
             #f_data_avg=f_data
 
-            f_data_y= f_data[:,1] #Extract y coordinates
-            f_data_x= f_data[:,0] #Extract x coordinates
+            f_data_y= f_data_avg[:,1] #Extract y coordinates
+            f_data_x= f_data_avg[:,0] #Extract x coordinates
 
             batch_size=batch_rotations.shape[0]
 
@@ -230,7 +238,7 @@ def evaluate_rot_loss(args, model,dataloader):
  
     estimated_rotation=convert_to_convetion(absolute_angles[valid_idx_samples[:,1]]-absolute_angles[valid_idx_samples[:,0]])
 
-    error=estimated_rotation-valid_rotation_difference   
+    error=convert_to_convetion(estimated_rotation-valid_rotation_difference)   
     
     mean_error = abs(error).mean()
     error_std = error.std(ddof=1)
